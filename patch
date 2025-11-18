@@ -1,0 +1,1101 @@
+diff --git a/app.js b/app.js
+index 7e50655..5a2d4e4 100644
+--- a/app.js
++++ b/app.js
+@@ -1,6 +1,6 @@
+ import { getCurrentRoute, listenRouteChange, navigateTo, runRouteGuards } from "./core/router.js";
+-import { loadAppDefinition, loadAppConfig, saveAppConfig } from "./core/configService.js";
+-import { loadCurrentUser, saveCurrentUser, loginAsSuperAdmin, clearCurrentUser } from "./core/authService.js";
++import { loadAppDefinition, loadAppConfig, saveAppConfig, setAppConfigCache } from "./core/configService.js";
++import { loadCurrentUser, clearCurrentUser } from "./core/authService.js";
+ import { getModuleRegistry, initModules } from "./core/moduleRegistry.js";
+ import { getAppVersion, runMigrations } from "./core/versionService.js";
+ import * as storageService from "./core/storageService.js";
+@@ -50,7 +50,7 @@ function applyTheme(theme) {
+ }
+ 
+ // global state
+-let appDefinition = null;
++let appDefinition = null;
+ let appConfigForCore = {
+   enabledModules: null,
+   moduleConfig: {},
+@@ -131,16 +131,26 @@ async function init() {
+   }
+ 
+   // migrace dat (zatím jen placeholder)
+   runMigrations({});
+ 
+-  await loadModulesFromDirectory();
++  // Načtení modulů přesunuto až po přihlášení uživatele
+ 
+-  if (!Object.keys(MODULE_REGISTRY).length) {
+-    root.innerHTML =
+-      '<div class="app-error">Nebyl nalezen žádný modul. Zkontrolujte adresář /modules a config/modules.php.</div>';
+-    return;
+-  }
++  // Pokus o automatické přihlášení uživatele na základě session
++  currentUser = await loadCurrentUser();
++  if (!currentUser) {
++    renderLogin();
++    return;
++  }
++  // Je-li uživatel přihlášen, načteme povolené moduly a pokračujeme do aplikace
++  await loadModulesFromDirectory();
++  if (!Object.keys(MODULE_REGISTRY).length) {
++    root.innerHTML = '<div class="app-error">Nebyl nalezen žádný modul. Zkontrolujte adresář /modules a config/modules.php.</div>';
++    return;
++  }
++  await initModules({
++    moduleRegistry: MODULE_REGISTRY,
++    appConfig: appConfigForCore,
++    currentUser,
++  });
++  await initAppAfterLogin();
+ }
+ 
+ async function initAppAfterLogin() {
+@@ -298,23 +308,36 @@ function renderLogin() {
+   form.appendChild(inputPass);
+   form.appendChild(btn);
+   form.appendChild(error);
+ 
+-  form.addEventListener("submit", (e) => {
+-    e.preventDefault();
+-    const username = inputUser.value.trim();
+-    const password = inputPass.value;
+-    const user = loginAsSuperAdmin(username, password, appDefinition);
+-    if (!user) {
+-      error.textContent = "Neplatné přihlašovací údaje.";
+-      error.style.display = "block";
+-      return;
+-    }
+-    error.style.display = "none";
+-    saveCurrentUser(user);
+-    currentUser = user;
+-    initAppAfterLogin();
+-  });
++  form.addEventListener("submit", async (e) => {
++    e.preventDefault();
++    const username = inputUser.value.trim();
++    const password = inputPass.value;
++    try {
++      const response = await fetch("./config/login.php", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ username, password })
++      });
++      if (!response.ok) throw new Error('HTTP ' + response.status);
++      const data = await response.json();
++      if (!data.success) {
++        error.textContent = "Neplatné přihlašovací údaje.";
++        error.style.display = "block";
++        return;
++      }
++      error.style.display = "none";
++      currentUser = data.user;
++      setAppConfigCache({
++        enabledModules: data.enabledModules || [],
++        moduleConfig: {},
++        users: []
++      });
++      await loadModulesFromDirectory();
++      await initAppAfterLogin();
++    } catch (err) {
++      console.error("Chyba přihlášení:", err);
++      error.textContent = "Nepodařilo se přihlásit. Zkuste to znovu.";
++      error.style.display = "block";
++    }
++  });
+ }
+@@ -490,6 +513,15 @@ function renderShell(currentModuleId, currentSubId) {
+   activeModules.forEach((id) => {
+     const entry = MODULE_REGISTRY[id];
+     if (!entry) return;
+@@ -511,6 +543,15 @@ function renderShell(currentModuleId, currentSubId) {
+     link.appendChild(labelSpan);
+     item.appendChild(link);
+ 
+     if (Array.isArray(mMeta.navItems) && mMeta.navItems.length) {
+       const subList = document.createElement("div");
+       subList.className = "nav-submenu";
+       mMeta.navItems.forEach((sub) => {
+         const subItem = document.createElement("div");
+         subItem.className = "nav-sub-item";
+         if (id === currentModuleId && sub.id === currentSubId) {
+           subItem.classList.add("active");
+         }
+         const subLink = document.createElement("a");
+         subLink.href = `#/${id}/${sub.id}`;
+         subLink.textContent = resolveNavItemLabel(sub, sub.id);
+         subItem.appendChild(subLink);
+         subList.appendChild(subItem);
+       });
+       item.appendChild(subList);
+     }
+@@ -550,6 +591,14 @@ function renderShell(currentModuleId, currentSubId) {
+   sidebar.appendChild(nav);
++  // Přidat tlačítko odhlášení pro uživatele
++  const logoutBtn = document.createElement('button');
++  logoutBtn.className = 'logout-button';
++  logoutBtn.textContent = 'Odhlásit se';
++  logoutBtn.addEventListener('click', () => {
++    fetch('./config/logout.php', { method: 'GET' }).then(() => { window.location.reload(); });
++  });
++  sidebar.appendChild(logoutBtn);
+@@ -591,7 +640,6 @@ function renderShell(currentModuleId, currentSubId) {
+   });
+ }
+ 
+ init();
+diff --git a/config/app.json b/config/app.json
+index 7b6ca06..7b76512 100644
+--- a/config/app.json
++++ b/config/app.json
+@@ -1,7 +1,7 @@
+ {
+   "superAdmin": {
+-    "username": "admin",
+-    "password": "admin"
++    "username": "admin",
++    "password": "admin"
+   },
+   "defaultEnabledModules": [
+     "config",
+diff --git a/config/database.php b/config/database.php
+index 8db1cec..a833af2 100644
+--- a/config/database.php
++++ b/config/database.php
+@@ -46,6 +46,13 @@ try {
+     } elseif ($action === 'provision') {
+         $pdo = createPdo($config, $driver);
+         provisionSchema($pdo, $driver);
++        // Po vytvoření schématu: vložení výchozích dat (admin uživatel, výchozí moduly)
++        $appConfigPath = __DIR__ . '/app.json';
++        $defaultAdmin = [ 'username' => 'admin', 'password' => 'admin' ];
++        $defaultModules = [];
++        if (file_exists($appConfigPath)) {
++            $appCfg = json_decode(file_get_contents($appConfigPath), true);
++            if (!empty($appCfg['superAdmin'])) {
++                if (!empty($appCfg['superAdmin']['username'])) $defaultAdmin['username'] = $appCfg['superAdmin']['username'];
++                if (!empty($appCfg['superAdmin']['password'])) $defaultAdmin['password'] = $appCfg['superAdmin']['password'];
++            }
++            if (!empty($appCfg['defaultEnabledModules']) && is_array($appCfg['defaultEnabledModules'])) {
++                $defaultModules = $appCfg['defaultEnabledModules'];
++            }
++        }
++        // Vložit super-admin uživatele, pokud žádní uživatelé zatím nejsou v DB
++        $countStmt = $pdo->query('SELECT COUNT(*) FROM app_users');
++        $userCount = $countStmt->fetchColumn();
++        if ($userCount == 0) {
++            $hash = password_hash($defaultAdmin["password"], PASSWORD_DEFAULT);
++            $insertUser = $pdo->prepare('INSERT INTO app_users (username, password, role) VALUES (?, ?, ?)');
++            $insertUser->execute([ $defaultAdmin['username'], $hash, 'super-admin' ]);
++        }
++        // Vložit výchozí moduly (povolit), pokud tabulka modulů je prázdná
++        $modCountStmt = $pdo->query('SELECT COUNT(*) FROM app_modules');
++        $modCount = $modCountStmt->fetchColumn();
++        if ($modCount == 0) {
++            if (empty($defaultModules)) {
++                // Pokud nejsou definovány výchozí moduly, použij všechny nalezené v adresáři /modules
++                $moduleDir = __DIR__ . '/../modules';
++                if (is_dir($moduleDir)) {
++                    foreach (scandir($moduleDir) as $name) {
++                        if ($name === '.' || $name === '..') continue;
++                        if (is_dir($moduleDir . '/' . $name)) {
++                            array_push($defaultModules, $name);
++                        }
++                    }
++                }
++            }
++            foreach ($defaultModules as $modId) {
++                $pdo->prepare('INSERT INTO app_modules (id, enabled) VALUES (?, 1)')->execute([$modId]);
++            }
++        }
++        // Uložit konfiguraci DB do souboru pro další použití API
++        file_put_contents(__DIR__ . '/db_config.json', json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+         respond([
+             'success' => true,
+             'message' => 'Schéma bylo ověřeno a tabulky jsou připravené.',
+@@ -95,6 +102,13 @@ function provisionSchema(PDO $pdo, string $driver): void
+     if ($driver === 'sqlite') {
+         $statements[] = 'CREATE TABLE IF NOT EXISTS app_users (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             username TEXT NOT NULL UNIQUE,
+             password TEXT NOT NULL,
+             role TEXT NOT NULL DEFAULT "user"
+         )';
+         $statements[] = 'CREATE TABLE IF NOT EXISTS app_permissions (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             user_id INTEGER NOT NULL,
+             module_id TEXT NOT NULL,
+             rights TEXT NOT NULL,
+             FOREIGN KEY(user_id) REFERENCES app_users(id)
+         )';
++        $statements[] = 'CREATE TABLE IF NOT EXISTS app_modules (
++            id TEXT PRIMARY KEY,
++            enabled INTEGER NOT NULL DEFAULT 0
++        )';
+     } elseif ($driver === 'mysql') {
+         $statements[] = 'CREATE TABLE IF NOT EXISTS app_users (
+             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+             username VARCHAR(191) NOT NULL UNIQUE,
+             password VARCHAR(255) NOT NULL,
+             role VARCHAR(50) NOT NULL DEFAULT "user",
+             PRIMARY KEY (id)
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+         $statements[] = 'CREATE TABLE IF NOT EXISTS app_permissions (
+             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+             user_id BIGINT UNSIGNED NOT NULL,
+             module_id VARCHAR(120) NOT NULL,
+             rights VARCHAR(20) NOT NULL,
+             PRIMARY KEY (id),
+             CONSTRAINT fk_app_permissions_user FOREIGN KEY (user_id)
+                 REFERENCES app_users(id) ON DELETE CASCADE
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
++        $statements[] = 'CREATE TABLE IF NOT EXISTS app_modules (
++            id VARCHAR(120) NOT NULL,
++            enabled TINYINT(1) NOT NULL DEFAULT 0,
++            PRIMARY KEY (id)
++        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+     } else {
+         $statements[] = 'CREATE TABLE IF NOT EXISTS app_users (
+             id BIGSERIAL PRIMARY KEY,
+             username VARCHAR(191) NOT NULL UNIQUE,
+             password VARCHAR(255) NOT NULL,
+             role VARCHAR(50) NOT NULL DEFAULT \'user\'
+         )';
+         $statements[] = 'CREATE TABLE IF NOT EXISTS app_permissions (
+             id BIGSERIAL PRIMARY KEY,
+             user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+             module_id VARCHAR(120) NOT NULL,
+             rights VARCHAR(20) NOT NULL
+         )';
++        $statements[] = 'CREATE TABLE IF NOT EXISTS app_modules (
++            id VARCHAR(120) PRIMARY KEY,
++            enabled BOOLEAN NOT NULL DEFAULT FALSE
++        )';
+     }
+diff --git a/config/db_connect.php b/config/db_connect.php
+new file mode 100644
+index 0000000..71c1f60
+--- /dev/null
++++ b/config/db_connect.php
+@@ -0,0 +1,43 @@
++<?php
++// Funkce pro získání PDO připojení k databázi pomocí konfigurace uložené po provedení nastavení
++function getDbConnection(): PDO {
++    $configPath = __DIR__ . '/db_config.json';
++    if (!file_exists($configPath)) {
++        throw new RuntimeException('Konfigurace databáze není nastavena.');
++    }
++    $conf = json_decode(file_get_contents($configPath), true);
++    if (!$conf || !isset($conf['driver'])) {
++        throw new RuntimeException('Konfigurace databáze není platná.');
++    }
++    $driver = strtolower($conf['driver']);
++    $host = $conf['host'] ?? 'localhost';
++    $port = $conf['port'] ?? ($driver === 'mysql' ? 3306 : ($driver === 'sqlite' ? 0 : 5432));
++    $database = $conf['database'] ?? '';
++    $username = $conf['username'] ?? '';
++    $password = $conf['password'] ?? '';
++    $ssl = !empty($conf['ssl']);
++
++    if ($driver !== 'sqlite' && $database === '') {
++        throw new RuntimeException('Není nastaven název databáze.');
++    }
++
++    $dsn = '';
++    if ($driver === 'mysql') {
++        $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $host, $port ?: 3306, $database);
++    } elseif ($driver === 'postgres') {
++        $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s%s', $host, $port ?: 5432, $database, $ssl ? ';sslmode=require' : '');
++    } elseif ($driver === 'sqlite') {
++        $path = $database !== '' ? $database : ':memory:';
++        $dsn = 'sqlite:' . $path;
++        $username = null;
++        $password = null;
++    } else {
++        throw new RuntimeException('Nepodporovaný databázový driver.');
++    }
++
++    $options = [
++        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
++        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
++    ];
++    return new PDO($dsn, $username, $password, $options);
++}
+diff --git a/config/login.php b/config/login.php
+new file mode 100644
+index 0000000..c668318
+--- /dev/null
++++ b/config/login.php
+@@ -0,0 +1,90 @@
++<?php
++// Přihlášení uživatele – kontrola vůči databázi nebo výchozímu super-admin účtu
++session_start();
++header('Content-Type: application/json; charset=utf-8');
++
++$input = json_decode(file_get_contents('php://input'), true);
++$username = $input['username'] ?? '';
++$password = $input['password'] ?? '';
++
++if (!$username || !$password) {
++    http_response_code(400);
++    echo json_encode([ 'success' => false, 'message' => 'Chybí uživatelské jméno nebo heslo.' ]);
++    exit;
++}
++
++require_once __DIR__ . '/db_connect.php';  // načte funkci getDbConnection() a konfiguraci DB
++
++try {
++    $pdo = getDbConnection();
++} catch (Exception $e) {
++    // Databázi se nepodařilo připojit – zkusit fallback na config superAdmin
++    $pdo = null;
++}
++
++$userData = null;
++if ($pdo) {
++    // Pokus o načtení uživatele z DB
++    $stmt = $pdo->prepare('SELECT id, username, password, role FROM app_users WHERE username = ?');
++    $stmt->execute([ $username ]);
++    $row = $stmt->fetch();
++    if ($row) {
++        // Ověření hesla
++        if (password_verify($password, $row['password'])) {
++            $userData = [
++                'id' => (int)$row['id'],
++                'username' => $row['username'],
++                'role' => $row['role'],
++            ];
++        }
++    }
++}
++
++// Pokud nebyl nalezen v DB, zkusíme super-admina z configu
++if (!$userData) {
++    // Načtení výchozího super-admin účtu z config/app.json
++    $appConfigPath = __DIR__ . '/app.json';
++    $superAdmin = [ 'username' => 'admin', 'password' => 'admin' ];
++    if (file_exists($appConfigPath)) {
++        $json = json_decode(file_get_contents($appConfigPath), true);
++        if (isset($json['superAdmin'])) {
++            $sa = $json['superAdmin'];
++            if (isset($sa['username'])) $superAdmin['username'] = $sa['username'];
++            if (isset($sa['password'])) $superAdmin['password'] = $sa['password'];
++        }
++    }
++    if ($username === $superAdmin['username'] && $password === $superAdmin['password']) {
++        $userData = [
++            'id' => null,
++            'username' => $superAdmin['username'],
++            'role' => 'super-admin',
++        ];
++    }
++}
++
++if (!$userData) {
++    // Neúspěšné přihlášení
++    echo json_encode([ 'success' => false, 'message' => 'Neplatné přihlašovací údaje.' ]);
++    exit;
++}
++
++// Uložení informace o přihlášeném uživateli do session
++$_SESSION['user_id'] = $userData['id'];
++$_SESSION['username'] = $userData['username'];
++$_SESSION['role'] = $userData['role'];
++
++// Načtení seznamu povolených modulů z databáze
++$enabledModules = [];
++if ($pdo) {
++    try {
++        $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
++        $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0);
++    } catch (Exception $e) {
++        $enabledModules = [];
++    }
++} else {
++    // Pokud není DB, použij výchozí povolené moduly z configu
++    $enabledModules = [];
++    $appConfigPath = __DIR__ . '/app.json';
++    if (file_exists($appConfigPath)) {
++        $json = json_decode(file_get_contents($appConfigPath), true);
++        if (!empty($json['defaultEnabledModules']) && is_array($json['defaultEnabledModules'])) {
++            $enabledModules = $json['defaultEnabledModules'];
++        }
++    }
++    if (empty($enabledModules)) {
++        // Pokud nejsou definované default moduly, povolit všechny nalezené
++        if (is_dir(__DIR__ . '/../modules')) {
++            foreach (scandir(__DIR__ . '/../modules') as $name) {
++                if ($name === '.' || $name === '..') continue;
++                if (is_dir(__DIR__ . '/../modules/' . $name)) {
++                    $enabledModules[] = $name;
++                }
++            }
++        }
++    }
++    // Ujistit se, že modul config je vždy povolen
++    if (!in_array('config', $enabledModules)) {
++        $enabledModules[] = 'config';
++    }
++}
++
++// Načtení oprávnění přihlášeného uživatele z DB
++$permissions = [];
++if ($pdo && $userData['id'] !== null) {
++    $stmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
++    $stmt->execute([ $userData['id'] ]);
++    while ($perm = $stmt->fetch()) {
++        $permissions[$perm['module_id']] = $perm['rights'];
++    }
++}
++
++// Sestavení odpovědi s informacemi o uživateli a konfiguraci
++$response = [
++    'success' => true,
++    'user' => [
++        'id' => $userData['id'],
++        'username' => $userData['username'],
++        'role' => $userData['role'],
++        'permissions' => $permissions,
++    ],
++    'enabledModules' => $enabledModules,
++];
++
++echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+diff --git a/config/logout.php b/config/logout.php
+new file mode 100644
+index 0000000..40574e5
+--- /dev/null
++++ b/config/logout.php
+@@ -0,0 +1,7 @@
++<?php
++// Odhlášení uživatele – zrušení session
++session_start();
++session_destroy();
++header('Content-Type: application/json; charset=utf-8');
++echo json_encode([ 'success' => true, 'message' => 'Uživatel byl odhlášen.' ]);
+diff --git a/config/modules.php b/config/modules.php
+index 10fa3df..0fd3615 100644
+--- a/config/modules.php
++++ b/config/modules.php
+@@
+ <?php
+-// Dynamické generování seznamu modulů na základě adresáře /modules.
+-// Vrací JSON ve tvaru:
+-// { "modules": [ { "id": "crm", "entry": "./modules/crm/index.js" }, ... ] }
++// Úprava: vyžadovat přihlášení a filtrovat moduly dle DB
+ session_start();
+-header('Content-Type: application/json; charset=utf-8');
++$baseDir    = __DIR__ . '/..';
++$modulesDir = $baseDir . '/modules';
++
++$result = [ 'modules' => [] ];
++
++// Pokud není uživatel přihlášen, vrátíme prázdný seznam (aplikace vyžaduje přihlášení)
++if (empty($_SESSION['username'])) {
++    echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
++    exit;
++}
++
++// Načtení seznamu povolených modulů z databáze (globálně) a oprávnění uživatele
++$enabledSet = null;
++$userPermissions = [];
++try {
++    require_once __DIR__ . '/db_connect.php';
++    $pdo = getDbConnection();
++    // zjištění globálně povolených modulů
++    $stmt = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
++    $enabledSet = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
++    $enabledSet = $enabledSet ? array_flip($enabledSet) : [];
++    // zjištění oprávnění pro aktuálního uživatele
++    if (!empty($_SESSION['user_id'])) {
++        $stmt2 = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
++        $stmt2->execute([ $_SESSION['user_id'] ]);
++        while ($perm = $stmt2->fetch(PDO::FETCH_ASSOC)) {
++            $userPermissions[$perm['module_id']] = $perm['rights'];
++        }
++    }
++} catch (Exception $e) {
++    // Databáze není dostupná nebo není nastavena - necháme enabledSet == null jako příznak pro fallback
++    $enabledSet = null;
++}
++
++// Projít adresář s moduly a sestavit seznam (s přihlédnutím k povolení a oprávněním)
++if (!is_dir($modulesDir)) {
++    echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
++    exit;
++}
++$items = scandir($modulesDir);
++foreach ($items as $name) {
++    if ($name === '.' || $name === '..') continue;
++    $full = $modulesDir . '/' . $name;
++    if (!is_dir($full)) continue;
++    // modul má mít alespoň index.js
++    $indexJs = $full . '/index.js';
++    if (!file_exists($indexJs)) continue;
++    $id = $name;
++    // Pokud je definován seznam povolených modulů (DB dostupná)
++    if (is_array($enabledSet)) {
++        if (!isset($enabledSet[$id])) {
++            // modul není povolen globálně, přeskočíme
++            continue;
++        }
++        // Kontrola oprávnění uživatele: pokud má explicitně 'none', přeskočit
++        if (isset($userPermissions[$id]) && $userPermissions[$id] === 'none') {
++            continue;
++        }
++    }
++    // Přidat modul do výsledku
++    $result['modules'][] = [
++        'id'    => $id,
++        'entry' => "./modules/{$id}/index.js"
++    ];
++}
++
++echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+diff --git a/config/session.php b/config/session.php
+new file mode 100644
+index 0000000..b79b516
+--- /dev/null
++++ b/config/session.php
+@@ -0,0 +1,66 @@
++<?php
++// Vrací informaci o aktuálně přihlášeném uživateli a konfiguraci
++session_start();
++header('Content-Type: application/json; charset=utf-8');
++
++if (empty($_SESSION['username'])) {
++    http_response_code(401);
++    echo json_encode([ 'success' => false, 'message' => 'Uživatel není přihlášen.' ]);
++    exit;
++}
++
++// Připravit výstup
++$userId = $_SESSION['user_id'] ?? null;
++$username = $_SESSION['username'];
++$role = $_SESSION['role'] ?? 'user';
++
++require_once __DIR__ . '/db_connect.php';
++$enabledModules = [];
++$permissions = [];
++
++if ($userId !== null) {
++    // Uživatel z DB
++    try {
++        $pdo = getDbConnection();
++        // Ověřit existenci a roli (mohla být upravena)
++        $stmt = $pdo->prepare('SELECT username, role FROM app_users WHERE id = ?');
++        $stmt->execute([ $userId ]);
++        if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
++            $username = $row['username'];
++            $role = $row['role'];
++            $_SESSION['role'] = $role; // případná aktualizace role v session
++        }
++        // Globálně povolené moduly
++        $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
++        $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0);
++        // Oprávnění uživatele
++        $permStmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
++        $permStmt->execute([ $userId ]);
++        while ($perm = $permStmt->fetch(PDO::FETCH_ASSOC)) {
++            $permissions[$perm['module_id']] = $perm['rights'];
++        }
++    } catch (Exception $e) {
++        // Pokud chyba DB, vrátit prázdné moduly
++        $enabledModules = [];
++        $permissions = [];
++    }
++} else {
++    // Uživatel je super-admin z configu (DB není připojena)
++    $appConfigPath = __DIR__ . '/app.json';
++    if (file_exists($appConfigPath)) {
++        $json = json_decode(file_get_contents($appConfigPath), true);
++        if (!empty($json['defaultEnabledModules']) && is_array($json['defaultEnabledModules'])) {
++            $enabledModules = $json['defaultEnabledModules'];
++        }
++    }
++    if (empty($enabledModules)) {
++        if (is_dir(__DIR__ . '/../modules')) {
++            foreach (scandir(__DIR__ . '/../modules') as $name) {
++                if ($name === '.' || $name === '..') continue;
++                if (is_dir(__DIR__ . '/../modules/' . $name)) {
++                    $enabledModules[] = $name;
++                }
++            }
++        }
++    }
++    if (!in_array('config', $enabledModules)) {
++        $enabledModules[] = 'config';
++    }
++    // Super-admin má implicitně plná práva (permissions zůstane prázdné = žádná omezení)
++}
++
++echo json_encode([
++    'success' => true,
++    'user' => [
++        'id' => $userId,
++        'username' => $username,
++        'role' => $role,
++        'permissions' => $permissions,
++    ],
++    'enabledModules' => $enabledModules
++], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+diff --git a/config/users.php b/config/users.php
+new file mode 100644
+index 0000000..fc80d8e
+--- /dev/null
++++ b/config/users.php
+@@ -0,0 +1,158 @@
++<?php
++// API pro CRUD operace nad uživateli
++session_start();
++header('Content-Type: application/json; charset=utf-8');
++
++require_once __DIR__ . '/db_connect.php';
++$method = $_SERVER['REQUEST_METHOD'];
++
++// Pro všechny operace vyžadujeme přihlášeného administrátora
++if (empty($_SESSION['role']) || !in_array($_SESSION['role'], ['super-admin','admin'])) {
++    http_response_code(403);
++    echo json_encode([ 'success' => false, 'message' => 'Nedostatečná oprávnění.' ]);
++    exit;
++}
++
++try {
++    $pdo = getDbConnection();
++} catch (Exception $e) {
++    http_response_code(500);
++    echo json_encode([ 'success' => false, 'message' => 'Databázové připojení se nezdařilo.' ]);
++    exit;
++}
++
++if ($method === 'GET') {
++    // Načtení seznamu uživatelů
++    $stmt = $pdo->query('SELECT id, username, role FROM app_users');
++    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
++    // Načtení všech oprávnění
++    $permStmt = $pdo->query('SELECT user_id, module_id, rights FROM app_permissions');
++    $perms = [];
++    while ($row = $permStmt->fetch(PDO::FETCH_ASSOC)) {
++        $u = $row['user_id'];
++        if (!isset($perms[$u])) {
++            $perms[$u] = [];
++        }
++        $perms[$u][$row['module_id']] = $row['rights'];
++    }
++    // Sestavení uživatelů s jejich oprávněními
++    foreach ($users as &$u) {
++        $uid = $u['id'];
++        $u['id'] = (int)$u['id'];
++        // Neposíláme hash hesla do frontendu
++        unset($u['password']);
++        $u['permissions'] = $perms[$uid] ?? [];
++    }
++    echo json_encode([ 'success' => true, 'users' => $users ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
++} elseif ($method === 'POST') {
++    // Vytvoření nového uživatele
++    $data = json_decode(file_get_contents('php://input'), true);
++    $username = $data['username'] ?? null;
++    $password = $data['password'] ?? null;
++    $role = $data['role'] ?? 'user';
++    $permissions = $data['permissions'] ?? [];
++    if (!$username || !$password) {
++        http_response_code(400);
++        echo json_encode([ 'success' => false, 'message' => 'Uživatelské jméno a heslo jsou povinné.' ]);
++        exit;
++    }
++    try {
++        $hash = password_hash($password, PASSWORD_DEFAULT);
++    } catch (Exception $e) {
++        http_response_code(500);
++        echo json_encode([ 'success' => false, 'message' => 'Chyba při zpracování hesla.' ]);
++        exit;
++    }
++    // Vložení uživatele
++    $stmt = $pdo->prepare('INSERT INTO app_users (username, password, role) VALUES (?, ?, ?)');
++    try {
++        $stmt->execute([ $username, $hash, $role ]);
++    } catch (Exception $e) {
++        http_response_code(500);
++        echo json_encode([ 'success' => false, 'message' => 'Nepodařilo se vytvořit uživatele. Uživatelské jméno již existuje?' ]);
++        exit;
++    }
++    $userId = $pdo->lastInsertId();
++    // Vložení oprávnění (pouze ne-"none")
++    if (is_array($permissions)) {
++        foreach ($permissions as $moduleId => $perm) {
++            if ($perm === 'none') continue;
++            $permStmt = $pdo->prepare('INSERT INTO app_permissions (user_id, module_id, rights) VALUES (?, ?, ?)');
++            $permStmt->execute([ $userId, $moduleId, $perm ]);
++        }
++    }
++    echo json_encode([ 'success' => true, 'message' => 'Uživatel vytvořen.', 'user' => [
++        'id' => (int)$userId,
++        'username' => $username,
++        'role' => $role,
++        'permissions' => $permissions,
++    ] ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
++} elseif ($method === 'DELETE') {
++    // Smazání uživatele
++    // ID uživatele očekáváno v parametru URL (např. users.php?id=5)
++    parse_str($_SERVER['QUERY_STRING'], $params);
++    $id = $params['id'] ?? null;
++    if (!$id) {
++        http_response_code(400);
++        echo json_encode([ 'success' => false, 'message' => 'Nebyl specifikován uživatel ke smazání.' ]);
++        exit;
++    }
++    // Nelze smazat sebe sama (volitelně)
++    if ($_SESSION['user_id'] && $id == $_SESSION['user_id']) {
++        http_response_code(400);
++        echo json_encode([ 'success' => false, 'message' => 'Nelze smazat sám sebe.' ]);
++        exit;
++    }
++    $stmt = $pdo->prepare('DELETE FROM app_users WHERE id = ?');
++    $stmt->execute([ $id ]);
++    // app_permissions má ON DELETE CASCADE, takže oprávnění se smažou automaticky
++    echo json_encode([ 'success' => true, 'message' => 'Uživatel smazán.' ]);
++} else {
++    http_response_code(405);
++    echo json_encode([ 'success' => false, 'message' => 'Nepodporovaná HTTP metoda.' ]);
++}
+diff --git a/core/authService.js b/core/authService.js
+index c6b6507..5dcd406 100644
+--- a/core/authService.js
++++ b/core/authService.js
+@@
+ const CURRENT_USER_STORAGE_KEY = "current_user_v1";
+ 
+-export function loadCurrentUser() {
+-  try {
+-    const raw = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+-    if (!raw) return null;
+-    const user = JSON.parse(raw);
+-    if (!user || typeof user !== "object") return null;
+-    return user;
+-  } catch (err) {
+-    console.warn("Chyba při čtení current_user_v1:", err);
+-    return null;
+-  }
++import { setAppConfigCache } from './configService.js';
++
++// Pozn.: LocalStorage se již nepoužívá pro uložení přihlášeného uživatele
++export async function loadCurrentUser() {
++  // Nová implementace: zjistí aktuálního uživatele ze serverové session
++  try {
++    const res = await fetch('./config/session.php', { credentials: 'same-origin' });
++    if (!res.ok) throw new Error('HTTP ' + res.status);
++    const data = await res.json();
++    if (!data.success) return null;
++    // Nastavení konfigurace aplikace podle dat ze serveru
++    setAppConfigCache({
++      enabledModules: data.enabledModules || [],
++      moduleConfig: {}, // modulová konfigurace se načte z výchozího nastavení
++      users: []
++    });
++    return data.user;
++  } catch (err) {
++    console.warn('Chyba při ověřování session:', err);
++    return null;
++  }
+ }
+@@
+-export function saveCurrentUser(user) {
+-  try {
+-    localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
+-  } catch (err) {
+-    console.warn("Chyba při zápisu current_user_v1:", err);
+-  }
++export function saveCurrentUser(user) {
++  // Uložení aktuálního uživatele již nevyužívá localStorage (spravuje se na serveru pomocí session)
++  // Tato funkce nyní neprovádí žádnou akci (přihlášení viz login.php na serveru).
+ }
+@@
+-export function clearCurrentUser() {
+-  try {
+-    localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+-  } catch (err) {
+-    console.warn("Chyba při mazání current_user_v1:", err);
+-  }
++export function clearCurrentUser() {
++  // Odstranění uživatele z localStorage již není třeba (session se ukončí na serveru)
++  // Tato funkce může například vynulovat stav na klientovi:
++  try {
++    localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
++  } catch (err) { /* ignorováno */ }
+ }
+@@
+-export function loginAsSuperAdmin(username, password, appDefinition) {
+-  const def = appDefinition || {};
+-  const sa = def.superAdmin || { username: "admin", password: "admin" };
+-  if (username === sa.username && password === sa.password) {
+-    return {
+-      username,
+-      role: "super-admin",
+-    };
+-  }
+-  return null;
++export function loginAsSuperAdmin(username, password, appDefinition) {
++  // Původní funkce pro lokální přihlášení super-admin (demo) - nyní je autentizace přes server
++  const def = appDefinition || {};
++  const sa = def.superAdmin || { username: "admin", password: "admin" };
++  if (username === sa.username && password === sa.password) {
++    return { username, role: "super-admin" };
++  }
++  return null;
+ }
+diff --git a/core/configService.js b/core/configService.js
+index 9eaf1e5..8bf075c 100644
+--- a/core/configService.js
++++ b/core/configService.js
+@@
+-const APP_CONFIG_STORAGE_KEY = "app_config_v2";
++const APP_CONFIG_STORAGE_KEY = "app_config_v2";
++// Ukládání konfigurace aplikace do localStorage bylo odstraněno ve prospěch ukládání v databázi
++let cachedAppConfig = null; // mezipaměť konfigurace načtené ze serveru
+@@
+ export async function loadAppDefinition() {
+   try {
+     const res = await fetch("./config/app.json");
+     if (!res.ok) throw new Error("HTTP " + res.status);
+     const json = await res.json();
+     return {
+       superAdmin: json.superAdmin || { username: "admin", password: "admin" },
+       defaultEnabledModules: Array.isArray(json.defaultEnabledModules)
+         ? json.defaultEnabledModules
+         : null,
+       modules: json.modules || {},
+     };
+@@
+-export function loadAppConfig() {
+-  try {
+-    const raw = localStorage.getItem(APP_CONFIG_STORAGE_KEY);
+-    if (!raw) {
+-      return {
+-        enabledModules: null,
+-        moduleConfig: {},
+-        users: [],
+-      };
+-    }
+-    const json = JSON.parse(raw);
+-    return {
+-      enabledModules: Array.isArray(json.enabledModules) ? json.enabledModules : null,
+-      moduleConfig: json.moduleConfig || {},
+-      users: Array.isArray(json.users) ? json.users : [],
+-    };
+-  } catch (err) {
+-    console.warn("Chyba při čtení app_config_v2:", err);
+-    return {
+-      enabledModules: null,
+-      moduleConfig: {},
+-      users: [],
+-    };
+-  }
++export function loadAppConfig() {
++  // Nově čte konfiguraci z mezipaměti získané ze serveru (případně vrátí výchozí hodnoty)
++  if (cachedAppConfig) {
++    return {
++      enabledModules: Array.isArray(cachedAppConfig.enabledModules) ? cachedAppConfig.enabledModules : [],
++      moduleConfig: cachedAppConfig.moduleConfig || {},
++      users: Array.isArray(cachedAppConfig.users) ? cachedAppConfig.users : []
++    };
++  }
++  return { enabledModules: null, moduleConfig: {}, users: [] };
+ }
+@@
+-export function saveAppConfig(config) {
+-  try {
+-    localStorage.setItem(APP_CONFIG_STORAGE_KEY, JSON.stringify(config));
+-  } catch (err) {
+-    console.warn("Chyba při ukládání app_config_v2:", err);
+-  }
++export function saveAppConfig(config) {
++  // Uložení konfigurace (povolených modulů) na server
++  if (!config || !Array.isArray(config.enabledModules)) {
++    console.warn('Neplatná konfigurace pro uložení', config);
++    return;
++  }
++  // Aktualizovat mezipaměť na klientu
++  cachedAppConfig = {
++    enabledModules: config.enabledModules,
++    moduleConfig: config.moduleConfig || {},
++    users: Array.isArray(config.users) ? config.users : []
++  };
++  // Odeslat změny na server (asynchronně)
++  return fetch('./config/modules.php', {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify({ enabledModules: config.enabledModules })
++  }).then(res => {
++    if (!res.ok) {
++      throw new Error('Chyba při ukládání konfigurace na serveru');
++    }
++    return res.json();
++  }).then(data => {
++    if (!data.success) {
++      console.error('Uložení konfigurace selhalo:', data.message);
++    }
++  }).catch(err => {
++    console.error('Chyba komunikace při ukládání konfigurace:', err);
++  });
+ }
+@@
++export function setAppConfigCache(config) {
++  // Nastavení mezipaměti konfigurace aplikace (např. po přihlášení)
++  cachedAppConfig = config;
++}
+diff --git a/modules/balp/index.js b/modules/balp/index.js
+index bc2d924..65a2bc9 100644
+--- a/modules/balp/index.js
++++ b/modules/balp/index.js
+@@
+-      container.appendChild(document.createTextNode(lang === "en"
+-        ? "BALP v2 demo module – data are only in localStorage."
+-        : "BALP v2 demo modul – data jsou pouze v localStorage."));
++      container.appendChild(document.createTextNode(lang === "en"
++        ? "BALP v2 demo module – data are stored in the database."
++        : "BALP v2 demo modul – data jsou ukládána do databáze."));
+diff --git a/modules/config/db_config.js b/modules/config/db_config.js
+index 2d463d3..6d84999 100644
+--- a/modules/config/db_config.js
++++ b/modules/config/db_config.js
+@@
+ function readStoredConfig() {
+   if (typeof localStorage === "undefined") {
+     return cloneConfig(DEFAULT_DATABASE_CONFIG);
+   }
+   try {
+     const raw = localStorage.getItem(DB_CONFIG_STORAGE_KEY);
+     if (!raw) {
+       return cloneConfig(DEFAULT_DATABASE_CONFIG);
+     }
+     const parsed = JSON.parse(raw);
+     return {
+       ...DEFAULT_DATABASE_CONFIG,
+       ...parsed,
+       port: normalizePort(parsed.port),
+     };
+   } catch (err) {
+     console.warn("Chyba při čtení db_config.js:", err);
+     return cloneConfig(DEFAULT_DATABASE_CONFIG);
+   }
+ }
+diff --git a/modules/config/index.js b/modules/config/index.js
+index e1f9f77..6ef95f6 100644
+--- a/modules/config/index.js
++++ b/modules/config/index.js
+@@
+ const DATABASE_API_ENDPOINT = "./config/database.php";
+@@
+ function renderConfig(container, ctx) {
+@@
+-  const saveBtn = document.createElement("button");
++  const saveBtn = document.createElement("button");
+@@
+-  saveBtn.addEventListener("click", () => {
+-    appConfig.users = users;
+-    saveAppConfig(appConfig);
+-    databaseConfig = saveDatabaseConfig(databaseConfig);
+-    showToast(
+-      lang === "en"
+-        ? "Configuration saved (including database)"
+-        : "Konfigurace včetně databáze uložena"
+-    );
+-  });
++  saveBtn.addEventListener("click", async () => {
++    appConfig.users = users;
++    await saveAppConfig(appConfig); // uložit konfiguraci modulů do DB
++    databaseConfig = saveDatabaseConfig(databaseConfig);
++    showToast(
++      lang === "en"
++        ? "Configuration saved (including database)"
++        : "Konfigurace včetně databáze uložena"
++    );
++  });
+@@
+   function renderModulesSection() {
+@@
+-    info.textContent =
+-      lang === "en"
+-        ? "Modules are detected automatically from the /modules directory (via config/modules.php). Here you can enable or disable them; configuration is stored in localStorage (app_config_v2)."
+-        : "Moduly jsou detekovány automaticky z adresáře /modules (přes config/modules.php). Zde je můžete zapínat/vypínat; konfigurace se ukládá do localStorage (app_config_v2).";
++    info.textContent =
++      lang === "en"
++        ? "Modules are detected automatically from the /modules directory (via config/modules.php). Here you can enable or disable them; configuration is stored in the database."
++        : "Moduly jsou detekovány automaticky z adresáře /modules (přes config/modules.php). Zde je můžete zapínat/vypínat; konfigurace se ukládá do databáze.";
+@@
+   function renderUsersSection() {
+@@
+-    info.textContent =
+-      lang === "en"
+-        ? "Example list of users within app_config_v2. Each user stores profile preferences either in a local folder (profiles/<login>) or in the database once connected."
+-        : "Ukázkový seznam uživatelů v rámci app_config_v2. Každý uživatel ukládá své preference buď do lokální složky (profiles/<login>) nebo do databáze po připojení.";
++    info.textContent = lang === "en"
++      ? "List of users loaded from the database (table app_users)."
++      : "Seznam uživatelů načtený z databáze (tabulka app_users).";
+@@
+   function renderPermissionsSection() {
+-    bodyEl.innerHTML = "";
+-    const info = document.createElement("p");
+-    info.className = "muted";
+-    info.innerHTML =
+-      lang === "en"
+-        ? "This section is a sketch of a permission system (user × module × rights). Currently it is only illustrative."
+-        : "Tato sekce je pouze náčrtem systému oprávnění (uživatel × modul × práva). Zatím slouží jen ilustračnímu účelu.";
+-    bodyEl.appendChild(info);
++    bodyEl.innerHTML = "";
++    const info = document.createElement("p");
++    info.className = "muted";
++    info.innerHTML = lang === "en"
++      ? "Permissions are stored in the database (table app_permissions). This section is illustrative."
++      : "Oprávnění jsou ukládána v databázi (tabulka app_permissions). Tato sekce je ilustrační.";
++    bodyEl.appendChild(info);
+diff --git a/modules/crm/index.js b/modules/crm/index.js
+index 3b3401c..94d4b03 100644
+--- a/modules/crm/index.js
++++ b/modules/crm/index.js
+@@
+ function loadCustomers(defaultCity) {
+-  try {
+-    const raw = localStorage.getItem(STORAGE_KEY);
+-    if (!raw) {
+-      return [
+-        { id: 1, name: "Firma A", city: defaultCity || "Praha" },
+-        { id: 2, name: "Firma B", city: defaultCity || "Praha" },
+-      ];
+-    }
+-    const parsed = JSON.parse(raw);
+-    return Array.isArray(parsed) ? parsed : [];
+-  } catch (err) {
+-    console.warn("CRM: Chyba při načítání zákazníků:", err);
+-    return [];
+-  }
++  // Původní demo data v localStorage odstraněna; načíst zákazníky z databáze
++  return [];
+ }
+diff --git a/modules/erp/index.js b/modules/erp/index.js
+index 3be95fe..112deca 100644
+--- a/modules/erp/index.js
++++ b/modules/erp/index.js
+@@
+ function loadOrders(defaultCurrency) {
+-  try {
+-    const raw = localStorage.getItem(STORAGE_KEY);
+-    if (!raw) {
+-      return [
+-        { id: 1001, customer: "Firma A", total: 25000, currency: defaultCurrency || "CZK" },
+-        { id: 1002, customer: "Firma B", total: 17850, currency: defaultCurrency || "CZK" },
+-      ];
+-    }
+-    const parsed = JSON.parse(raw);
+-    return Array.isArray(parsed) ? parsed : [];
+-  } catch (err) {
+-    console.warn("ERP: Chyba při načítání objednávek:", err);
+-    return [];
+-  }
++  // Původní demo data v localStorage odstraněna; načíst objednávky z databáze
++  return [];
+ }
