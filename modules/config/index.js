@@ -4,6 +4,33 @@ import { navigateTo } from "../../core/router.js";
 import { showToast } from "../../core/uiService.js";
 import { loadDatabaseConfig, saveDatabaseConfig } from "./db_config.js";
 
+const DATABASE_API_ENDPOINT = "./config/database.php";
+
+async function requestDatabaseAction(action, config) {
+  try {
+    const response = await fetch(DATABASE_API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, config }),
+    });
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (err) {
+      throw new Error("Server vrátil neplatnou odpověď.");
+    }
+    if (!response.ok || !data.success) {
+      throw new Error(data && data.message ? data.message : "Operace se nezdařila.");
+    }
+    return data;
+  } catch (err) {
+    if (err instanceof Error) {
+      throw err;
+    }
+    throw new Error("Nepodařilo se kontaktovat databázové API.");
+  }
+}
+
 const CONFIG_META = {
   id: "config",
   iconClass: "fa-solid fa-sliders",
@@ -189,8 +216,10 @@ function renderConfig(container, ctx) {
     });
     bodyEl.appendChild(reloadBtn);
 
-    const form = document.createElement("div");
+    const form = document.createElement("form");
     form.className = "database-form";
+    form.autocomplete = "off";
+    form.addEventListener("submit", (e) => e.preventDefault());
 
     function createField(labelText, inputEl, description) {
       const wrapper = document.createElement("label");
@@ -285,7 +314,7 @@ function renderConfig(container, ctx) {
     passwordInput.type = "password";
     passwordInput.placeholder = lang === "en" ? "Password" : "Heslo";
     passwordInput.value = databaseConfig.password || "";
-    passwordInput.autocomplete = "new-password";
+    passwordInput.autocomplete = "current-password";
     passwordInput.addEventListener("input", () => {
       databaseConfig.password = passwordInput.value;
     });
@@ -416,7 +445,7 @@ function renderConfig(container, ctx) {
       statusPanel.appendChild(message);
     }
 
-    function runDatabaseAction(type) {
+    async function runDatabaseAction(type) {
       databaseStatus = {
         state: type === "test" ? "testing" : "provisioning",
         message: "",
@@ -424,38 +453,40 @@ function renderConfig(container, ctx) {
       updateStatusPanel();
       testBtn.disabled = true;
       createBtn.disabled = true;
-      setTimeout(() => {
-        const success = Boolean(databaseConfig.host && databaseConfig.database);
-        if (success) {
-          databaseStatus = {
-            state: "ready",
-            message:
-              type === "test"
-                ? lang === "en"
-                  ? "Connection succeeded."
-                  : "Spojení se podařilo."
-                : lang === "en"
-                ? "Schema created (users, permissions)."
-                : "Schéma vytvořeno (uživatelé, oprávnění).",
-          };
-          showToast(
-            lang === "en"
-              ? "Database action finished"
-              : "Databázová akce dokončena"
-          );
-        } else {
-          databaseStatus = {
-            state: "error",
-            message:
-              lang === "en"
-                ? "Fill in host and database name before running the action."
-                : "Než spustíte akci, doplňte hostitele a název databáze.",
-          };
-        }
-        updateStatusPanel();
-        testBtn.disabled = false;
-        createBtn.disabled = false;
-      }, 800);
+      try {
+        const result = await requestDatabaseAction(type, databaseConfig);
+        databaseStatus = {
+          state: "ready",
+          message:
+            result && result.message
+              ? result.message
+              : type === "test"
+              ? lang === "en"
+                ? "Connection succeeded."
+                : "Spojení se podařilo."
+              : lang === "en"
+              ? "Schema created (users, permissions)."
+              : "Schéma vytvořeno (uživatelé, oprávnění).",
+        };
+        showToast(
+          lang === "en"
+            ? "Database server responded"
+            : "Databázový server odpověděl"
+        );
+      } catch (err) {
+        databaseStatus = {
+          state: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : lang === "en"
+              ? "Database request failed."
+              : "Požadavek na databázi selhal.",
+        };
+      }
+      updateStatusPanel();
+      testBtn.disabled = false;
+      createBtn.disabled = false;
     }
 
     testBtn.addEventListener("click", () => runDatabaseAction("test"));
@@ -589,11 +620,13 @@ function renderConfig(container, ctx) {
       const inputUser = document.createElement("input");
       inputUser.placeholder = lang === "en" ? "Username" : "Uživatelské jméno";
       inputUser.required = true;
+      inputUser.autocomplete = "username";
 
       const inputPass = document.createElement("input");
       inputPass.type = "password";
       inputPass.placeholder = lang === "en" ? "Password" : "Heslo";
       inputPass.required = true;
+      inputPass.autocomplete = "current-password";
 
       const roleSelect = document.createElement("select");
       [
