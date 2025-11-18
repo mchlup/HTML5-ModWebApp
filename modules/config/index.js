@@ -156,65 +156,24 @@ function renderConfig(container, ctx) {
     info.className = "muted";
     info.textContent =
       lang === "en"
-        ? "Example list of users within app_config_v2. Each user may have own configuration in future."
-        : "Ukázkový seznam uživatelů v rámci app_config_v2. Každý uživatel může mít do budoucna vlastní konfiguraci.";
+        ? "Example list of users within app_config_v2. Each user stores profile preferences either in a local folder (profiles/<login>) or in the database once connected."
+        : "Ukázkový seznam uživatelů v rámci app_config_v2. Každý uživatel ukládá své preference buď do lokální složky (profiles/<login>) nebo do databáze po připojení.";
     bodyEl.appendChild(info);
 
-    const form = document.createElement("form");
-    form.className = "form-vertical";
-
-    const inputUser = document.createElement("input");
-    inputUser.placeholder = lang === "en" ? "Username" : "Uživatelské jméno";
-    inputUser.required = true;
-
-    const inputRole = document.createElement("input");
-    inputRole.placeholder = lang === "en" ? "Role (e.g. admin, user)" : "Role (např. admin, user)";
-    inputRole.value = "user";
-
-    const inputDefaultModule = document.createElement("input");
-    inputDefaultModule.placeholder =
-      lang === "en" ? "Default module (e.g. crm)" : "Výchozí modul (např. crm)";
-    inputDefaultModule.value = "config";
-
-    const btn = document.createElement("button");
-    btn.type = "submit";
-    btn.textContent = lang === "en" ? "Add user" : "Přidat uživatele";
-
-    form.appendChild(inputUser);
-    form.appendChild(inputRole);
-    form.appendChild(inputDefaultModule);
-    form.appendChild(btn);
-
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const username = inputUser.value.trim();
-      const role = inputRole.value.trim() || "user";
-      const defaultModule = inputDefaultModule.value.trim() || "config";
-      if (!username) return;
-
-      const nextId = users.length ? users[users.length - 1].id + 1 : 1;
-      const u = {
-        id: nextId,
-        username,
-        role,
-        appConfig: { defaultModule },
-        modules: {},
-      };
-      users = [...users, u];
-      appConfig.users = users;
-      inputUser.value = "";
-      renderUsersTable();
-    });
-
-    bodyEl.appendChild(form);
+    const addUserBtn = document.createElement("button");
+    addUserBtn.type = "button";
+    addUserBtn.className = "primary-action";
+    addUserBtn.textContent = lang === "en" ? "Add user" : "Přidat uživatele";
+    addUserBtn.addEventListener("click", () => openUserModal());
+    bodyEl.appendChild(addUserBtn);
 
     const table = document.createElement("table");
     table.className = "table";
     const thead = document.createElement("thead");
     thead.innerHTML =
       lang === "en"
-        ? "<tr><th>ID</th><th>User</th><th>Role</th><th>Default module</th></tr>"
-        : "<tr><th>ID</th><th>Uživatel</th><th>Role</th><th>Výchozí modul</th></tr>";
+        ? "<tr><th>ID</th><th>User</th><th>Role</th><th>Default module</th><th>Permissions</th><th>Profile storage</th></tr>"
+        : "<tr><th>ID</th><th>Uživatel</th><th>Role</th><th>Výchozí modul</th><th>Oprávnění</th><th>Úložiště profilu</th></tr>";
     table.appendChild(thead);
     const tbody = document.createElement("tbody");
     table.appendChild(tbody);
@@ -224,13 +183,181 @@ function renderConfig(container, ctx) {
       tbody.innerHTML = "";
       users.forEach((u) => {
         const defaultModule = (u.appConfig && u.appConfig.defaultModule) || "config";
+        const permissionSummary =
+          u.permissions && Object.keys(u.permissions).length
+            ? Object.keys(u.permissions)
+                .map((mId) => `${mId}: ${u.permissions[mId]}`)
+                .join(", ")
+            : lang === "en"
+            ? "Inherited"
+            : "Dědí z role";
+        const storageLabel =
+          u.storage === "database"
+            ? lang === "en" ? "Database" : "Databáze"
+            : (lang === "en" ? "Local: " : "Lokální: ") + (u.profilePath || "-");
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${u.id}</td><td>${u.username}</td><td>${u.role}</td><td>${defaultModule}</td>`;
+        tr.innerHTML = `<td>${u.id}</td><td>${u.username}</td><td>${u.role}</td><td>${defaultModule}</td><td>${permissionSummary}</td><td>${storageLabel}</td>`;
         tbody.appendChild(tr);
       });
     }
 
     renderUsersTable();
+
+    function openUserModal() {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+
+      const dialog = document.createElement("div");
+      dialog.className = "modal";
+
+      const header = document.createElement("div");
+      header.className = "modal-header";
+      const title = document.createElement("h3");
+      title.textContent = lang === "en" ? "New user" : "Nový uživatel";
+      header.appendChild(title);
+
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "modal-close";
+      closeBtn.innerHTML = "&times;";
+      closeBtn.addEventListener("click", () => closeModal());
+      header.appendChild(closeBtn);
+
+      dialog.appendChild(header);
+
+      const form = document.createElement("form");
+      form.className = "form-vertical";
+
+      const inputUser = document.createElement("input");
+      inputUser.placeholder = lang === "en" ? "Username" : "Uživatelské jméno";
+      inputUser.required = true;
+
+      const inputPass = document.createElement("input");
+      inputPass.type = "password";
+      inputPass.placeholder = lang === "en" ? "Password" : "Heslo";
+      inputPass.required = true;
+
+      const roleSelect = document.createElement("select");
+      [
+        { value: "admin", labelCs: "Administrátor", labelEn: "Administrator" },
+        { value: "manager", labelCs: "Manažer", labelEn: "Manager" },
+        { value: "user", labelCs: "Uživatel", labelEn: "User" },
+        { value: "viewer", labelCs: "Pouze čtení", labelEn: "Viewer" },
+      ].forEach((role) => {
+        const option = document.createElement("option");
+        option.value = role.value;
+        option.textContent = lang === "en" ? role.labelEn : role.labelCs;
+        roleSelect.appendChild(option);
+      });
+
+      const roleLabel = document.createElement("label");
+      roleLabel.textContent = lang === "en" ? "Role" : "Role";
+      roleLabel.appendChild(roleSelect);
+
+      const permSection = document.createElement("div");
+      permSection.className = "permissions-section";
+      const permTitle = document.createElement("p");
+      permTitle.className = "muted";
+      permTitle.textContent =
+        lang === "en"
+          ? "Module permissions"
+          : "Oprávnění pro jednotlivé moduly";
+      permSection.appendChild(permTitle);
+
+      const permissionControls = new Map();
+
+      knownModules.forEach((mod) => {
+        const row = document.createElement("label");
+        row.className = "permission-row";
+        const span = document.createElement("span");
+        span.textContent = mod.label || mod.id;
+        const select = document.createElement("select");
+        [
+          { value: "none", labelCs: "Bez přístupu", labelEn: "No access" },
+          { value: "read", labelCs: "Čtení", labelEn: "Read" },
+          { value: "manage", labelCs: "Plný přístup", labelEn: "Full access" },
+        ].forEach((perm) => {
+          const opt = document.createElement("option");
+          opt.value = perm.value;
+          opt.textContent = lang === "en" ? perm.labelEn : perm.labelCs;
+          if (mod.id === "config" && perm.value !== "manage") {
+            opt.disabled = true;
+          }
+          select.appendChild(opt);
+        });
+        if (mod.id === "config") {
+          select.value = "manage";
+        } else {
+          select.value = "read";
+        }
+        permissionControls.set(mod.id, select);
+        row.appendChild(span);
+        row.appendChild(select);
+        permSection.appendChild(row);
+      });
+
+      const submitBtn = document.createElement("button");
+      submitBtn.type = "submit";
+      submitBtn.textContent = lang === "en" ? "Create user" : "Vytvořit uživatele";
+
+      form.appendChild(inputUser);
+      form.appendChild(inputPass);
+      form.appendChild(roleLabel);
+      form.appendChild(permSection);
+      form.appendChild(submitBtn);
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const username = inputUser.value.trim();
+        if (!username) return;
+        const password = inputPass.value;
+        const role = roleSelect.value || "user";
+        const permissions = {};
+        permissionControls.forEach((ctrl, moduleId) => {
+          permissions[moduleId] = ctrl.value;
+        });
+
+        const nextId = users.length ? users[users.length - 1].id + 1 : 1;
+        const defaultModule =
+          Object.keys(permissions).find((m) => permissions[m] !== "none") || "config";
+        const profilePath = `/profiles/${username}`;
+        const newUser = {
+          id: nextId,
+          username,
+          password,
+          role,
+          permissions,
+          profilePath,
+          storage: "localFolder",
+          appConfig: { defaultModule },
+          modules: {},
+        };
+
+        users = [...users, newUser];
+        appConfig.users = users;
+        renderUsersTable();
+        closeModal();
+      });
+
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) {
+          closeModal();
+        }
+      });
+
+      dialog.appendChild(form);
+      overlay.appendChild(dialog);
+      document.body.classList.add("modal-open");
+      document.body.appendChild(overlay);
+      inputUser.focus();
+
+      function closeModal() {
+        if (overlay.parentNode) {
+          overlay.parentNode.removeChild(overlay);
+        }
+        document.body.classList.remove("modal-open");
+      }
+    }
   }
 
   function renderPermissionsSection() {
