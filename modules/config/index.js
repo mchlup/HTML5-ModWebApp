@@ -285,6 +285,7 @@ function renderConfig(container, ctx) {
     passwordInput.type = "password";
     passwordInput.placeholder = lang === "en" ? "Password" : "Heslo";
     passwordInput.value = databaseConfig.password || "";
+    passwordInput.autocomplete = "new-password";
     passwordInput.addEventListener("input", () => {
       databaseConfig.password = passwordInput.value;
     });
@@ -481,9 +482,11 @@ function renderConfig(container, ctx) {
     dbHeadline.textContent =
       lang === "en" ? "Database target" : "Cílová databáze";
     const dbText = document.createElement("p");
-    const databaseTarget = databaseConfig.host
-      ? `${databaseConfig.host}:${databaseConfig.port || 5432}/${
-          databaseConfig.database || ""}`
+    const hostLabel = databaseConfig.host || "";
+    const portLabel = databaseConfig.port || 5432;
+    const nameLabel = databaseConfig.database || "";
+    const databaseTarget = hostLabel
+      ? `${hostLabel}:${portLabel}/${nameLabel}`
       : null;
     dbText.textContent =
       (databaseTarget
@@ -540,12 +543,16 @@ function renderConfig(container, ctx) {
             : lang === "en"
             ? "Inherited"
             : "Dědí z role";
-        const storageLabel =
-          u.storage === "database"
-            ? (lang === "en" ? "Database" : "Databáze") +
-              ` (${databaseConfig.host || "localhost"}/${
-                databaseConfig.database || "-"})`
-            : (lang === "en" ? "Local: " : "Lokální: ") + (u.profilePath || "-");
+        const storageLabel = (() => {
+          if (u.storage === "database") {
+            const storageHost = databaseConfig.host || "localhost";
+            const storageDb = databaseConfig.database || "-";
+            const prefix = lang === "en" ? "Database" : "Databáze";
+            return `${prefix} (${storageHost}/${storageDb})`;
+          }
+          const localPrefix = lang === "en" ? "Local: " : "Lokální: ";
+          return localPrefix + (u.profilePath || "-");
+        })();
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${u.id}</td><td>${u.username}</td><td>${u.role}</td><td>${defaultModule}</td><td>${permissionSummary}</td><td>${storageLabel}</td>`;
         tbody.appendChild(tr);
