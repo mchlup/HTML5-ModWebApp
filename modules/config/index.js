@@ -1,6 +1,7 @@
 import { registerModule } from "../../core/moduleRegistry.js";
 import { loadAppConfig, saveAppConfig } from "../../core/configService.js";
 import { navigateTo } from "../../core/router.js";
+import { showToast } from "../../core/uiService.js";
 
 const CONFIG_META = {
   id: "config",
@@ -15,16 +16,6 @@ const CONFIG_META = {
     { id: "permissions", labels: { cs: "Oprávnění", en: "Permissions" } },
   ],
 };
-
-function showToast(message) {
-  const el = document.createElement("div");
-  el.className = "toast-notification";
-  el.textContent = message;
-  document.body.appendChild(el);
-  setTimeout(() => {
-    if (el.parentNode) el.parentNode.removeChild(el);
-  }, 2600);
-}
 
 function renderConfig(container, ctx) {
   const lang = (ctx && ctx.language) || "cs";
@@ -43,7 +34,6 @@ function renderConfig(container, ctx) {
       }))
     : [];
 
-  // Ujistíme se, že konfigurace obsahuje alespoň modul config
   if (!knownModules.find((m) => m.id === "config")) {
     knownModules.unshift({ id: "config", label: "Konfigurace" });
   }
@@ -112,8 +102,8 @@ function renderConfig(container, ctx) {
     info.className = "muted";
     info.textContent =
       lang === "en"
-        ? "Modules are detected automatically from the /modules directory (via config/modules.php). Here you can enable or disable them and adjust per-module configuration stored in localStorage (app_config_v2)."
-        : "Moduly jsou detekovány automaticky z adresáře /modules (přes config/modules.php). Zde je můžete zapínat/vypínat a upravovat jejich konfiguraci, která se ukládá v localStorage (app_config_v2).";
+        ? "Modules are detected automatically from the /modules directory (via config/modules.php). Here you can enable or disable them; configuration is stored in localStorage (app_config_v2)."
+        : "Moduly jsou detekovány automaticky z adresáře /modules (přes config/modules.php). Zde je můžete zapínat/vypínat; konfigurace se ukládá do localStorage (app_config_v2).";
     bodyEl.appendChild(info);
 
     const table = document.createElement("table");

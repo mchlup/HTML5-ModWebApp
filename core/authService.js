@@ -21,6 +21,14 @@ export function saveCurrentUser(user) {
   }
 }
 
+export function clearCurrentUser() {
+  try {
+    localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+  } catch (err) {
+    console.warn("Chyba při mazání current_user_v1:", err);
+  }
+}
+
 export function loginAsSuperAdmin(username, password, appDefinition) {
   const def = appDefinition || {};
   const sa = def.superAdmin || { username: "admin", password: "admin" };

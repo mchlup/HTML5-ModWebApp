@@ -1,17 +1,19 @@
-import { getCurrentRoute, listenRouteChange, navigateTo } from "./core/router.js";
+import { getCurrentRoute, listenRouteChange, navigateTo, runRouteGuards } from "./core/router.js";
 import { loadAppDefinition, loadAppConfig, saveAppConfig } from "./core/configService.js";
-import { loadCurrentUser, saveCurrentUser, loginAsSuperAdmin } from "./core/authService.js";
-import { getModuleRegistry } from "./core/moduleRegistry.js";
+import { loadCurrentUser, saveCurrentUser, loginAsSuperAdmin, clearCurrentUser } from "./core/authService.js";
+import { getModuleRegistry, initModules } from "./core/moduleRegistry.js";
+import { getAppVersion, runMigrations } from "./core/versionService.js";
+import * as storageService from "./core/storageService.js";
+import * as uiService from "./core/uiService.js";
+import * as eventBus from "./core/eventBus.js";
+import * as permissionService from "./core/permissionService.js";
+import { registerService } from "./core/serviceRegistry.js";
+import { setLanguage, getLanguage } from "./core/i18n.js";
 
 const root = document.getElementById("app-root");
 
 let currentLanguage = "cs";
 let MODULE_REGISTRY = {};
-
-function resolveModuleMeta(moduleId) {
-  const entry = MODULE_REGISTRY[moduleId];
-  return entry && entry.meta ? entry.meta : null;
-}
 
 function resolveLabel(meta, fallback) {
   if (meta && meta.labels) {
@@ -53,6 +55,7 @@ function initTheme() {
   applyTheme(t);
 }
 
+// global state
 let appDefinition = null;
 let appConfigForCore = {
   enabledModules: null,
@@ -63,7 +66,6 @@ let activeModules = [];
 let currentUser = null;
 
 async function loadModulesFromDirectory() {
-  // config/modules.php dynamicky vygeneruje JSON se seznamem modulů na základě adresáře /modules
   let manifest = null;
   try {
     const res = await fetch("./config/modules.php");
@@ -220,7 +222,7 @@ function renderShell(currentModuleId, currentSubId) {
 
   const badge = document.createElement("div");
   badge.className = "badge";
-  badge.innerHTML = '<i class="fa-regular fa-circle-dot"></i><span>statická verze</span>';
+  badge.innerHTML = `<i class="fa-regular fa-circle-dot"></i><span>statická verze · v${getAppVersion()}</span>`;
   sidebar.appendChild(badge);
 
   const nav = document.createElement("nav");
@@ -332,6 +334,19 @@ function renderShell(currentModuleId, currentSubId) {
   updateThemeToggleLabel();
   header.appendChild(themeToggle);
 
+  // odhlášení (volitelné)
+  const logoutBtn = document.createElement("button");
+  logoutBtn.type = "button";
+  logoutBtn.style.marginLeft = "0.5rem";
+  logoutBtn.textContent = "Odhlásit";
+  logoutBtn.addEventListener("click", () => {
+    clearCurrentUser();
+    currentUser = null;
+    navigateTo("config", null);
+    renderLogin();
+  });
+  header.appendChild(logoutBtn);
+
   main.appendChild(header);
 
   const contentCard = document.createElement("div");
@@ -348,6 +363,12 @@ function renderShell(currentModuleId, currentSubId) {
       currentUser,
       currentSubId,
       language: currentLanguage,
+      services: {
+        storage: storageService,
+        ui: uiService,
+        events: eventBus,
+        permissions: permissionService,
+      },
     });
   } else {
     contentCard.innerHTML = "<p>Modul nebyl nalezen.</p>";
@@ -363,6 +384,16 @@ function renderShell(currentModuleId, currentSubId) {
 async function init() {
   initTheme();
 
+  // registrace core služeb do serviceRegistry – moduly si je mohou vyzvednout
+  registerService("storage", storageService);
+  registerService("ui", uiService);
+  registerService("events", eventBus);
+  registerService("permissions", permissionService);
+
+  // jazyk – zatím natvrdo cs, do budoucna z configu/uživatele
+  currentLanguage = "cs";
+  setLanguage(currentLanguage);
+
   root.innerHTML = '<div class="app-loading">Načítám aplikaci…</div>';
 
   try {
@@ -374,6 +405,9 @@ async function init() {
     return;
   }
 
+  // migrace dat (zatím jen placeholder)
+  runMigrations({});
+
   await loadModulesFromDirectory();
 
   if (!Object.keys(MODULE_REGISTRY).length) {
@@ -381,6 +415,13 @@ async function init() {
       '<div class="app-error">Nebyl nalezen žádný modul. Zkontrolujte adresář /modules a config/modules.php.</div>';
     return;
   }
+
+  // init hooky modulů
+  await initModules({
+    moduleRegistry: MODULE_REGISTRY,
+    appConfig: appConfigForCore,
+    currentUser,
+  });
 
   currentUser = loadCurrentUser();
 
@@ -396,6 +437,15 @@ async function initAppAfterLogin() {
   prepareConfiguration();
 
   const route = getCurrentRoute();
+  const guarded = runRouteGuards(route, {
+    currentUser,
+    appConfig: appConfigForCore,
+  });
+  if (guarded && guarded.redirectTo) {
+    window.location.hash = guarded.redirectTo;
+    return;
+  }
+
   const moduleId = activeModules.includes(route.moduleId)
     ? route.moduleId
     : activeModules[0];
@@ -409,6 +459,15 @@ async function initAppAfterLogin() {
   renderShell(moduleId, currentSubId);
 
   listenRouteChange((r) => {
+    const guardedR = runRouteGuards(r, {
+      currentUser,
+      appConfig: appConfigForCore,
+    });
+    if (guardedR && guardedR.redirectTo) {
+      window.location.hash = guardedR.redirectTo;
+      return;
+    }
+
     const id = activeModules.includes(r.moduleId) ? r.moduleId : activeModules[0];
     const subId = r.subId || null;
     renderShell(id, subId);
