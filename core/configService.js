@@ -1,4 +1,5 @@
 const APP_CONFIG_STORAGE_KEY = "app_config_v2";
+let cachedAppConfig = null;
 
 export async function loadAppDefinition() {
   try {
@@ -23,45 +24,53 @@ export async function loadAppDefinition() {
 }
 
 export function loadAppConfig() {
-  try {
-    const raw = localStorage.getItem(APP_CONFIG_STORAGE_KEY);
-    if (!raw) {
-      return {
-        enabledModules: null,
-        moduleConfig: {},
-        users: [],
-      };
-    }
-    const json = JSON.parse(raw);
+  if (cachedAppConfig) {
     return {
-      enabledModules: Array.isArray(json.enabledModules)
-        ? json.enabledModules
-        : null,
-      moduleConfig:
-        json.moduleConfig && typeof json.moduleConfig === "object"
-          ? json.moduleConfig
-          : {},
-      users: Array.isArray(json.users) ? json.users : [],
-    };
-  } catch (err) {
-    console.warn("Chyba při čtení app_config_v2:", err);
-    return {
-      enabledModules: null,
-      moduleConfig: {},
-      users: [],
+      enabledModules: Array.isArray(cachedAppConfig.enabledModules)
+        ? cachedAppConfig.enabledModules
+        : [],
+      moduleConfig: cachedAppConfig.moduleConfig || {},
+      users: Array.isArray(cachedAppConfig.users) ? cachedAppConfig.users : [],
     };
   }
+  return {
+    enabledModules: null,
+    moduleConfig: {},
+    users: [],
+  };
 }
 
 export function saveAppConfig(cfg) {
-  try {
-    const toSave = {
-      enabledModules: cfg.enabledModules || null,
-      moduleConfig: cfg.moduleConfig || {},
-      users: cfg.users || [],
-    };
-    localStorage.setItem(APP_CONFIG_STORAGE_KEY, JSON.stringify(toSave));
-  } catch (err) {
-    console.warn("Chyba při zápisu app_config_v2:", err);
+  if (!cfg || !Array.isArray(cfg.enabledModules)) {
+    console.warn("Neplatná konfigurace pro uložení", cfg);
+    return;
   }
+  cachedAppConfig = {
+    enabledModules: cfg.enabledModules,
+    moduleConfig: cfg.moduleConfig || {},
+    users: Array.isArray(cfg.users) ? cfg.users : [],
+  };
+  return fetch("./config/modules.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabledModules: cfg.enabledModules }),
+  })
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error("Chyba při ukládání konfigurace na serveru");
+      }
+      return res.json();
+    })
+    .then((data) => {
+      if (!data.success) {
+        console.error("Uložení konfigurace selhalo:", data.message);
+      }
+    })
+    .catch((err) => {
+      console.error("Chyba komunikace při ukládání konfigurace:", err);
+    });
+}
+
+export function setAppConfigCache(config) {
+  cachedAppConfig = config;
 }

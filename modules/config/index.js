@@ -101,9 +101,9 @@ function renderConfig(container, ctx) {
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
   saveBtn.textContent = lang === "en" ? "Save configuration" : "Uložit konfiguraci";
-  saveBtn.addEventListener("click", () => {
+  saveBtn.addEventListener("click", async () => {
     appConfig.users = users;
-    saveAppConfig(appConfig);
+    await saveAppConfig(appConfig);
     databaseConfig = saveDatabaseConfig(databaseConfig);
     showToast(
       lang === "en"
@@ -139,8 +139,8 @@ function renderConfig(container, ctx) {
     info.className = "muted";
     info.textContent =
       lang === "en"
-        ? "Modules are detected automatically from the /modules directory (via config/modules.php). Here you can enable or disable them; configuration is stored in localStorage (app_config_v2)."
-        : "Moduly jsou detekovány automaticky z adresáře /modules (přes config/modules.php). Zde je můžete zapínat/vypínat; konfigurace se ukládá do localStorage (app_config_v2).";
+        ? "Modules are detected automatically from the /modules directory (via config/modules.php). Here you can enable or disable them; configuration is stored in the database."
+        : "Moduly jsou detekovány automaticky z adresáře /modules (přes config/modules.php). Zde je můžete zapínat/vypínat; konfigurace se ukládá do databáze.";
     bodyEl.appendChild(info);
 
     const table = document.createElement("table");
@@ -503,8 +503,8 @@ function renderConfig(container, ctx) {
     info.className = "muted";
     info.textContent =
       lang === "en"
-        ? "Example list of users within app_config_v2. Each user stores profile preferences either in a local folder (profiles/<login>) or in the database once connected."
-        : "Ukázkový seznam uživatelů v rámci app_config_v2. Každý uživatel ukládá své preference buď do lokální složky (profiles/<login>) nebo do databáze po připojení.";
+        ? "List of users loaded from the database (table app_users)."
+        : "Seznam uživatelů načtený z databáze (tabulka app_users).";
     bodyEl.appendChild(info);
 
     const dbSummary = document.createElement("div");
@@ -791,8 +791,8 @@ function renderConfig(container, ctx) {
     info.className = "muted";
     info.innerHTML =
       lang === "en"
-        ? "This section is a sketch of a permission system (user × module × rights). Currently it is only illustrative."
-        : "Tato sekce je pouze náčrtem systému oprávnění (uživatel × modul × práva). Zatím slouží jen ilustračnímu účelu.";
+        ? "Permissions are stored in the database (table app_permissions). This section is illustrative."
+        : "Oprávnění jsou ukládána v databázi (tabulka app_permissions). Tato sekce je ilustrační.";
     bodyEl.appendChild(info);
 
     const dbReminder = document.createElement("div");

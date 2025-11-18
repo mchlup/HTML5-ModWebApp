@@ -18,30 +18,13 @@ const CRM_META = {
   ],
 };
 
-const STORAGE_KEY = "crm_customers_v1";
-
 function loadCustomers(defaultCity) {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return [
-        { id: 1, name: "Firma A", city: defaultCity || "Praha" },
-        { id: 2, name: "Firma B", city: "Brno" },
-      ];
-    }
-    return JSON.parse(raw);
-  } catch (err) {
-    console.warn("CRM: chyba při čtení localStorage:", err);
-    return [];
-  }
+  void defaultCity;
+  return [];
 }
 
 function saveCustomers(list) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  } catch (err) {
-    console.warn("CRM: chyba při zápisu do localStorage:", err);
-  }
+  void list;
 }
 
 function renderCrm(container, ctx) {
@@ -60,8 +43,8 @@ function renderCrm(container, ctx) {
   info.className = "muted";
   info.textContent =
     lang === "en"
-      ? "Data is stored only in browser localStorage (no backend)."
-      : "Data jsou ukládána jen do localStorage v prohlížeči (žádný backend).";
+      ? "Data is stored in the shared database."
+      : "Data jsou ukládána ve sdílené databázi.";
   container.appendChild(info);
 
   if (subId === "main") {

@@ -1,24 +1,27 @@
+import { setAppConfigCache } from "./configService.js";
+
 const CURRENT_USER_STORAGE_KEY = "current_user_v1";
 
-export function loadCurrentUser() {
+export async function loadCurrentUser() {
   try {
-    const raw = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
-    if (!raw) return null;
-    const user = JSON.parse(raw);
-    if (!user || typeof user !== "object") return null;
-    return user;
+    const res = await fetch("./config/session.php", { credentials: "same-origin" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (!data.success) return null;
+    setAppConfigCache({
+      enabledModules: data.enabledModules || [],
+      moduleConfig: {},
+      users: [],
+    });
+    return data.user;
   } catch (err) {
-    console.warn("Chyba při čtení current_user_v1:", err);
+    console.warn("Chyba při ověřování session:", err);
     return null;
   }
 }
 
 export function saveCurrentUser(user) {
-  try {
-    localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
-  } catch (err) {
-    console.warn("Chyba při zápisu current_user_v1:", err);
-  }
+  void user;
 }
 
 export function clearCurrentUser() {

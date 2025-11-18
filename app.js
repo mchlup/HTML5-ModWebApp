@@ -1,6 +1,6 @@
 import { getCurrentRoute, listenRouteChange, navigateTo, runRouteGuards } from "./core/router.js";
-import { loadAppDefinition, loadAppConfig, saveAppConfig } from "./core/configService.js";
-import { loadCurrentUser, saveCurrentUser, loginAsSuperAdmin, clearCurrentUser } from "./core/authService.js";
+import { loadAppDefinition, loadAppConfig, saveAppConfig, setAppConfigCache } from "./core/configService.js";
+import { loadCurrentUser, clearCurrentUser } from "./core/authService.js";
 import { getModuleRegistry, initModules } from "./core/moduleRegistry.js";
 import { getAppVersion, runMigrations } from "./core/versionService.js";
 import * as storageService from "./core/storageService.js";
@@ -138,20 +138,42 @@ function renderLogin() {
   form.appendChild(btn);
   form.appendChild(error);
 
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const username = inputUser.value.trim();
     const password = inputPass.value;
-    const user = loginAsSuperAdmin(username, password, appDefinition);
-    if (!user) {
-      error.textContent = "Neplatné přihlašovací údaje.";
+    try {
+      const response = await fetch("./config/login.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const data = await response.json();
+      if (!data.success) {
+        error.textContent = "Neplatné přihlašovací údaje.";
+        error.style.display = "block";
+        return;
+      }
+      error.style.display = "none";
+      currentUser = data.user;
+      setAppConfigCache({
+        enabledModules: data.enabledModules || [],
+        moduleConfig: {},
+        users: [],
+      });
+      await loadModulesFromDirectory();
+      await initModules({
+        moduleRegistry: MODULE_REGISTRY,
+        appConfig: appConfigForCore,
+        currentUser,
+      });
+      await initAppAfterLogin();
+    } catch (err) {
+      console.error("Chyba přihlášení:", err);
+      error.textContent = "Nepodařilo se přihlásit. Zkuste to znovu.";
       error.style.display = "block";
-      return;
     }
-    error.style.display = "none";
-    saveCurrentUser(user);
-    currentUser = user;
-    initAppAfterLogin();
   });
 
   card.appendChild(form);
@@ -286,6 +308,19 @@ function renderShell(currentModuleId, currentSubId) {
 
   sidebar.appendChild(nav);
 
+  const sidebarLogoutBtn = document.createElement("button");
+  sidebarLogoutBtn.className = "logout-button";
+  sidebarLogoutBtn.textContent = "Odhlásit se";
+  sidebarLogoutBtn.addEventListener("click", () => {
+    fetch("./config/logout.php", { method: "GET" })
+      .catch(() => {})
+      .finally(() => {
+        clearCurrentUser();
+        window.location.reload();
+      });
+  });
+  sidebar.appendChild(sidebarLogoutBtn);
+
   const userPanel = document.createElement("div");
   userPanel.className = "user-panel";
 
@@ -336,10 +371,12 @@ function renderShell(currentModuleId, currentSubId) {
   logoutBtn.title = "Odhlásit se";
   logoutBtn.setAttribute("aria-label", "Odhlásit se");
   logoutBtn.addEventListener("click", () => {
-    clearCurrentUser();
-    currentUser = null;
-    navigateTo("config", null);
-    renderLogin();
+    fetch("./config/logout.php", { method: "GET" })
+      .catch(() => {})
+      .finally(() => {
+        clearCurrentUser();
+        window.location.reload();
+      });
   });
   userActions.appendChild(logoutBtn);
 
@@ -372,7 +409,7 @@ function renderShell(currentModuleId, currentSubId) {
   const info = document.createElement("div");
   info.className = "muted";
   info.textContent =
-    "Ukázkový skeleton – statické HTML/JS. Konfigurace aplikace, uživatelů i modulů se ukládá do localStorage.";
+    "Ukázkový skeleton – statické HTML/JS. Konfigurace aplikace, uživatelů i modulů se ukládá do databáze.";
   header.appendChild(info);
 
   main.appendChild(header);
@@ -436,6 +473,14 @@ async function init() {
   // migrace dat (zatím jen placeholder)
   runMigrations({});
 
+  // Načtení modulů proběhne až po ověření přihlášeného uživatele
+
+  currentUser = await loadCurrentUser();
+  if (!currentUser) {
+    renderLogin();
+    return;
+  }
+
   await loadModulesFromDirectory();
 
   if (!Object.keys(MODULE_REGISTRY).length) {
@@ -444,19 +489,11 @@ async function init() {
     return;
   }
 
-  // init hooky modulů
   await initModules({
     moduleRegistry: MODULE_REGISTRY,
     appConfig: appConfigForCore,
     currentUser,
   });
-
-  currentUser = loadCurrentUser();
-
-  if (!currentUser) {
-    renderLogin();
-    return;
-  }
 
   await initAppAfterLogin();
 }
