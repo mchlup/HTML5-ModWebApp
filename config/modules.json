@@ -1,7 +1,0 @@
-{
-  "modules": [
-    { "id": "config", "entry": "./modules/config/index.js" },
-    { "id": "crm",    "entry": "./modules/crm/index.js" },
-    { "id": "erp",    "entry": "./modules/erp/index.js" }
-  ]
-}
