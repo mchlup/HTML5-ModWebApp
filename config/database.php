@@ -22,6 +22,57 @@ try {
     } elseif ($action === 'provision') {
         $pdo = createPdo($config, $driver);
         provisionSchema($pdo, $driver);
+
+        $appConfigPath = __DIR__ . '/app.json';
+        $defaultAdmin = ['username' => 'admin', 'password' => 'admin'];
+        $defaultModules = [];
+        if (file_exists($appConfigPath)) {
+            $appCfg = json_decode(file_get_contents($appConfigPath), true);
+            if (!empty($appCfg['superAdmin'])) {
+                if (!empty($appCfg['superAdmin']['username'])) {
+                    $defaultAdmin['username'] = $appCfg['superAdmin']['username'];
+                }
+                if (!empty($appCfg['superAdmin']['password'])) {
+                    $defaultAdmin['password'] = $appCfg['superAdmin']['password'];
+                }
+            }
+            if (!empty($appCfg['defaultEnabledModules']) && is_array($appCfg['defaultEnabledModules'])) {
+                $defaultModules = $appCfg['defaultEnabledModules'];
+            }
+        }
+
+        $countStmt = $pdo->query('SELECT COUNT(*) FROM app_users');
+        $userCount = (int)$countStmt->fetchColumn();
+        if ($userCount === 0) {
+            $hash = password_hash($defaultAdmin['password'], PASSWORD_DEFAULT);
+            $insertUser = $pdo->prepare('INSERT INTO app_users (username, password, role) VALUES (?, ?, ?)');
+            $insertUser->execute([$defaultAdmin['username'], $hash, 'super-admin']);
+        }
+
+        $modCountStmt = $pdo->query('SELECT COUNT(*) FROM app_modules');
+        $modCount = (int)$modCountStmt->fetchColumn();
+        if ($modCount === 0) {
+            if (empty($defaultModules)) {
+                $moduleDir = __DIR__ . '/../modules';
+                if (is_dir($moduleDir)) {
+                    foreach (scandir($moduleDir) as $name) {
+                        if ($name === '.' || $name === '..') {
+                            continue;
+                        }
+                        if (is_dir($moduleDir . '/' . $name)) {
+                            $defaultModules[] = $name;
+                        }
+                    }
+                }
+            }
+            foreach ($defaultModules as $modId) {
+                $stmt = $pdo->prepare('INSERT INTO app_modules (id, enabled) VALUES (?, 1)');
+                $stmt->execute([$modId]);
+            }
+        }
+
+        file_put_contents(__DIR__ . '/db_config.json', json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
         respond([
             'success' => true,
             'message' => 'Schéma bylo ověřeno a tabulky jsou připravené.',
@@ -111,6 +162,10 @@ function provisionSchema(PDO $pdo, string $driver): void
             rights TEXT NOT NULL,
             FOREIGN KEY(user_id) REFERENCES app_users(id)
         )';
+        $statements[] = 'CREATE TABLE IF NOT EXISTS app_modules (
+            id TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 0
+        )';
     } elseif ($driver === 'mysql') {
         $statements[] = 'CREATE TABLE IF NOT EXISTS app_users (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -128,6 +183,11 @@ function provisionSchema(PDO $pdo, string $driver): void
             CONSTRAINT fk_app_permissions_user FOREIGN KEY (user_id)
                 REFERENCES app_users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+        $statements[] = 'CREATE TABLE IF NOT EXISTS app_modules (
+            id VARCHAR(120) NOT NULL,
+            enabled TINYINT(1) NOT NULL DEFAULT 0,
+            PRIMARY KEY (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     } else {
         $statements[] = 'CREATE TABLE IF NOT EXISTS app_users (
             id BIGSERIAL PRIMARY KEY,
@@ -140,6 +200,10 @@ function provisionSchema(PDO $pdo, string $driver): void
             user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
             module_id VARCHAR(120) NOT NULL,
             rights VARCHAR(20) NOT NULL
+        )';
+        $statements[] = 'CREATE TABLE IF NOT EXISTS app_modules (
+            id VARCHAR(120) PRIMARY KEY,
+            enabled BOOLEAN NOT NULL DEFAULT FALSE
         )';
     }
 

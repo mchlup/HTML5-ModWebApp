@@ -90,8 +90,8 @@ function renderBalp(container, ctx) {
   info.className = "muted";
   info.textContent =
     lang === "en"
-      ? "BALP v2 demo module – data are only in localStorage."
-      : "BALP v2 demo modul – data jsou pouze v localStorage.";
+      ? "BALP v2 demo module – data are stored in the database."
+      : "BALP v2 demo modul – data jsou ukládána do databáze.";
   container.appendChild(info);
 
   if (subId === "suroviny") {
