@@ -62,24 +62,23 @@ let appConfigForCore = {
 let activeModules = [];
 let currentUser = null;
 
-async function loadModulesFromManifest() {
+async function loadModulesFromDirectory() {
+  // config/modules.php dynamicky vygeneruje JSON se seznamem modulů na základě adresáře /modules
   let manifest = null;
   try {
-    const res = await fetch("./config/modules.json");
+    const res = await fetch("./config/modules.php");
     if (!res.ok) throw new Error("HTTP " + res.status);
     manifest = await res.json();
   } catch (err) {
-    console.error("Nepodařilo se načíst config/modules.json, použiji výchozí manifest:", err);
-    manifest = {
-      modules: [
-        { id: "config", entry: "./modules/config/index.js" },
-        { id: "crm", entry: "./modules/crm/index.js" },
-        { id: "erp", entry: "./modules/erp/index.js" },
-      ],
-    };
+    console.error("Nepodařilo se načíst config/modules.php:", err);
+    manifest = { modules: [] };
   }
 
   const list = Array.isArray(manifest.modules) ? manifest.modules : [];
+  if (!list.length) {
+    console.warn("Manifest modulů je prázdný.");
+  }
+
   for (const m of list) {
     if (!m || !m.entry) continue;
     try {
@@ -375,11 +374,11 @@ async function init() {
     return;
   }
 
-  await loadModulesFromManifest();
+  await loadModulesFromDirectory();
 
   if (!Object.keys(MODULE_REGISTRY).length) {
     root.innerHTML =
-      '<div class="app-error">Nebyl nalezen žádný modul. Zkontrolujte config/modules.json.</div>';
+      '<div class="app-error">Nebyl nalezen žádný modul. Zkontrolujte adresář /modules a config/modules.php.</div>';
     return;
   }
 
