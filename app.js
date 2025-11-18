@@ -117,11 +117,13 @@ function renderLogin() {
   const inputUser = document.createElement("input");
   inputUser.placeholder = "Uživatelské jméno";
   inputUser.value = "admin";
+  inputUser.autocomplete = "username";
 
   const inputPass = document.createElement("input");
   inputPass.placeholder = "Heslo";
   inputPass.type = "password";
   inputPass.value = "admin";
+  inputPass.autocomplete = "current-password";
 
   const btn = document.createElement("button");
   btn.type = "submit";
