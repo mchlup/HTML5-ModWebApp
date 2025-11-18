@@ -779,9 +779,49 @@ body.theme-dark .user-panel .avatar {
   min-width: 120px;
 }
 
+.user-panel button i {
+  margin-right: 0.35rem;
+}
+
 .user-panel .theme-toggle {
   margin-left: 0;
   justify-content: center;
+}
+
+.app-sidebar.app-sidebar-collapsed .user-panel {
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+}
+
+.app-sidebar.app-sidebar-collapsed .user-panel .user-info {
+  flex-direction: column;
+  text-align: center;
+}
+
+.app-sidebar.app-sidebar-collapsed .user-panel .user-name {
+  display: none;
+}
+
+.app-sidebar.app-sidebar-collapsed .user-panel .user-actions {
+  flex-direction: column;
+  width: 100%;
+  gap: 0.35rem;
+}
+
+.app-sidebar.app-sidebar-collapsed .user-panel button {
+  min-width: auto;
+  width: 100%;
+  padding: 0.45rem;
+}
+
+.app-sidebar.app-sidebar-collapsed .user-panel button span {
+  display: none;
+}
+
+.app-sidebar.app-sidebar-collapsed .user-panel button i {
+  margin-right: 0;
+  font-size: 1rem;
 }
 
 /* Responsive */

@@ -306,6 +306,8 @@ function renderShell(currentModuleId, currentSubId) {
   const themeToggle = document.createElement("button");
   themeToggle.type = "button";
   themeToggle.className = "theme-toggle";
+  themeToggle.title = "Přepnout motiv";
+  themeToggle.setAttribute("aria-label", "Přepnout motiv");
 
   function updateThemeToggleLabel() {
     const isDark = document.body.classList.contains("theme-dark");
@@ -326,7 +328,11 @@ function renderShell(currentModuleId, currentSubId) {
 
   const logoutBtn = document.createElement("button");
   logoutBtn.type = "button";
-  logoutBtn.textContent = "Odhlásit";
+  logoutBtn.className = "logout-btn";
+  logoutBtn.innerHTML =
+    '<i class="fa-solid fa-arrow-right-from-bracket"></i><span> Odhlásit</span>';
+  logoutBtn.title = "Odhlásit se";
+  logoutBtn.setAttribute("aria-label", "Odhlásit se");
   logoutBtn.addEventListener("click", () => {
     clearCurrentUser();
     currentUser = null;
