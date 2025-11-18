@@ -1,125 +1,126 @@
-import { MODULE_REGISTRY } from "./core/modules.js";
 import { getCurrentRoute, listenRouteChange, navigateTo } from "./core/router.js";
 import { loadAppDefinition, loadAppConfig, saveAppConfig } from "./core/configService.js";
 import { loadCurrentUser, saveCurrentUser, loginAsSuperAdmin } from "./core/authService.js";
+import { getModuleRegistry } from "./core/moduleRegistry.js";
 
 const root = document.getElementById("app-root");
 
-let activeModules = [];
-let appDefinition = null; // obsah config/app.json
+let currentLanguage = "cs";
+let MODULE_REGISTRY = {};
+
+function resolveModuleMeta(moduleId) {
+  const entry = MODULE_REGISTRY[moduleId];
+  return entry && entry.meta ? entry.meta : null;
+}
+
+function resolveLabel(meta, fallback) {
+  if (meta && meta.labels) {
+    return meta.labels[currentLanguage] || meta.labels["cs"] || fallback;
+  }
+  return fallback;
+}
+
+function resolveNavItemLabel(itemMeta, fallback) {
+  if (itemMeta && itemMeta.labels) {
+    return itemMeta.labels[currentLanguage] || itemMeta.labels["cs"] || fallback;
+  }
+  return fallback;
+}
+
+const THEME_STORAGE_KEY = "app_theme_v1";
+
+function applyTheme(theme) {
+  const t = theme === "dark" ? "dark" : "light";
+  document.body.classList.remove("theme-dark", "theme-light");
+  document.body.classList.add(t === "dark" ? "theme-dark" : "theme-light");
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, t);
+  } catch (err) {
+    console.warn("Theme: nelze uložit do localStorage", err);
+  }
+}
+
+function initTheme() {
+  let t = "dark";
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "dark" || stored === "light") {
+      t = stored;
+    }
+  } catch (err) {
+    console.warn("Theme: nelze číst z localStorage", err);
+  }
+  applyTheme(t);
+}
+
+let appDefinition = null;
 let appConfigForCore = {
   enabledModules: null,
   moduleConfig: {},
   users: [],
 };
+let activeModules = [];
 let currentUser = null;
 
-// Vyrenderuje hlavní shell aplikace (sidebar + header + obsah modulu)
-function renderShell(currentModuleId) {
-  const current = MODULE_REGISTRY[currentModuleId];
-
-  root.innerHTML = "";
-
-  const shell = document.createElement("div");
-  shell.className = "app-shell";
-
-  const sidebar = document.createElement("aside");
-  sidebar.className = "app-sidebar";
-
-  const logo = document.createElement("h1");
-  logo.className = "app-logo";
-  logo.textContent = "CRM/ERP";
-  sidebar.appendChild(logo);
-
-  const badge = document.createElement("div");
-  badge.className = "badge";
-  badge.textContent = "statická verze";
-  sidebar.appendChild(badge);
-
-  const nav = document.createElement("nav");
-  activeModules.forEach((id) => {
-    const mod = MODULE_REGISTRY[id];
-    if (!mod) return;
-    const item = document.createElement("div");
-    item.className = "nav-item";
-    const link = document.createElement("a");
-    link.href = `#/${id}`;
-    link.textContent = mod.label;
-    item.appendChild(link);
-    nav.appendChild(item);
-  });
-  sidebar.appendChild(nav);
-
-  const main = document.createElement("main");
-  main.className = "app-main";
-
-  const header = document.createElement("div");
-  header.className = "app-header";
-
-  const title = document.createElement("h2");
-  title.textContent = current ? current.label : "Neznámý modul";
-  header.appendChild(title);
-
-  const info = document.createElement("div");
-  info.className = "muted";
-  info.textContent =
-    "Ukázkový skeleton – statické HTML/JS. Konfigurace aplikace, uživatelů i modulů se ukládá do localStorage.";
-  header.appendChild(info);
-
-  main.appendChild(header);
-
-  const contentCard = document.createElement("div");
-  contentCard.className = "card";
-
-  if (current && typeof current.render === "function") {
-    current.render(contentCard, {
-      activeModules: [...activeModules],
-      moduleRegistry: MODULE_REGISTRY,
-      appConfig: appConfigForCore,
-      currentUser,
-    });
-  } else {
-    contentCard.innerHTML = "<p>Modul nebyl nalezen.</p>";
+async function loadModulesFromManifest() {
+  let manifest = null;
+  try {
+    const res = await fetch("./config/modules.json");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    manifest = await res.json();
+  } catch (err) {
+    console.error("Nepodařilo se načíst config/modules.json, použiji výchozí manifest:", err);
+    manifest = {
+      modules: [
+        { id: "config", entry: "./modules/config/index.js" },
+        { id: "crm", entry: "./modules/crm/index.js" },
+        { id: "erp", entry: "./modules/erp/index.js" },
+      ],
+    };
   }
 
-  main.appendChild(contentCard);
+  const list = Array.isArray(manifest.modules) ? manifest.modules : [];
+  for (const m of list) {
+    if (!m || !m.entry) continue;
+    try {
+      await import(m.entry);
+    } catch (err) {
+      console.error("Chyba při dynamickém importu modulu", m.entry, err);
+    }
+  }
 
-  shell.appendChild(sidebar);
-  shell.appendChild(main);
-  root.appendChild(shell);
+  MODULE_REGISTRY = getModuleRegistry();
 }
 
-// Přihlašovací obrazovka super-admina
 function renderLogin() {
-  root.innerHTML = "";
-
   const wrapper = document.createElement("div");
   wrapper.className = "login-root";
 
   const card = document.createElement("div");
-  card.className = "card login-card";
+  card.className = "login-card";
 
-  const title = document.createElement("h2");
+  const title = document.createElement("h1");
   title.className = "login-title";
-  title.textContent = "Přihlášení";
+  title.textContent = "Modulární CRM/ERP – demo";
+  card.appendChild(title);
 
   const subtitle = document.createElement("p");
   subtitle.className = "login-subtitle";
   subtitle.textContent =
-    "Zadej přihlašovací údaje super-admina definované v config/app.json.";
+    "Přihlaste se jako super-admin. Údaje jsou definovány v config/app.json.";
+  card.appendChild(subtitle);
 
   const form = document.createElement("form");
   form.className = "login-form";
 
   const inputUser = document.createElement("input");
-  inputUser.type = "text";
   inputUser.placeholder = "Uživatelské jméno";
-  inputUser.required = true;
+  inputUser.value = "admin";
 
   const inputPass = document.createElement("input");
-  inputPass.type = "password";
   inputPass.placeholder = "Heslo";
-  inputPass.required = true;
+  inputPass.type = "password";
+  inputPass.value = "admin";
 
   const btn = document.createElement("button");
   btn.type = "submit";
@@ -138,61 +139,46 @@ function renderLogin() {
     e.preventDefault();
     const username = inputUser.value.trim();
     const password = inputPass.value;
-
     const user = loginAsSuperAdmin(username, password, appDefinition);
-    if (user) {
-      saveCurrentUser(user);
-      currentUser = user;
-      init(); // znovu inicializuj app jako přihlášený
-    } else {
+    if (!user) {
       error.textContent = "Neplatné přihlašovací údaje.";
       error.style.display = "block";
+      return;
     }
+    error.style.display = "none";
+    saveCurrentUser(user);
+    currentUser = user;
+    initAppAfterLogin();
   });
 
-  card.appendChild(title);
-  card.appendChild(subtitle);
   card.appendChild(form);
   wrapper.appendChild(card);
+
+  root.innerHTML = "";
   root.appendChild(wrapper);
 }
 
-// Načtení a výpočet konfigurace (enabledModules, moduleConfig, users)
-async function prepareConfiguration() {
-  const def = appDefinition;
-  let cfg = loadAppConfig();
+function prepareConfiguration() {
+  const def = appDefinition || { modules: {}, defaultEnabledModules: null };
+  const cfg = loadAppConfig();
 
-  // enabledModules: pokud není uložené, použij defaulty z appDefinition,
-  // případně všechny známé moduly
-  let enabled =
-    (cfg.enabledModules && cfg.enabledModules.slice()) ||
-    def.defaultEnabledModules ||
-    Object.keys(MODULE_REGISTRY);
+  let enabled = cfg.enabledModules;
+  if (!Array.isArray(enabled) || !enabled.length) {
+    enabled = def.defaultEnabledModules || Object.keys(MODULE_REGISTRY);
+  }
 
-  // filtr na známé moduly
-  const knownIds = new Set(Object.keys(MODULE_REGISTRY));
-  enabled = enabled.filter((id) => knownIds.has(id));
-
-  // Modul konfigurace vždy aktivní
-  if (MODULE_REGISTRY.config && !enabled.includes("config")) {
+  enabled = enabled.filter((id) => !!MODULE_REGISTRY[id]);
+  if (!enabled.includes("config") && MODULE_REGISTRY["config"]) {
     enabled.unshift("config");
   }
-
-  // Bez aktivních modulů – fallback
   if (!enabled.length) {
     enabled = Object.keys(MODULE_REGISTRY);
-    if (!enabled.includes("config") && MODULE_REGISTRY.config) {
-      enabled.unshift("config");
-    }
   }
 
-  // Modulová konfigurace: merge defaultů z appDefinition a uložených override
-  const moduleConfig = {
-    ...(def.modules || {}),
-    ...(cfg.moduleConfig || {}),
-  };
+  const moduleCfgFromDef = def.modules || {};
+  const moduleCfgFromStorage = cfg.moduleConfig || {};
+  const moduleConfig = { ...moduleCfgFromDef, ...moduleCfgFromStorage };
 
-  // users: zatím jen to, co je v app_config_v2
   const users = Array.isArray(cfg.users) ? cfg.users : [];
 
   appConfigForCore = {
@@ -200,59 +186,233 @@ async function prepareConfiguration() {
     moduleConfig,
     users,
   };
+  activeModules = [...enabled];
 
-  // Ulož zpět (sjednocenou konfiguraci)
   saveAppConfig(appConfigForCore);
-
-  // Sestavení activeModules bez duplicit
-  const seen = new Set();
-  activeModules = enabled.filter((id) => {
-    if (!MODULE_REGISTRY[id]) return false;
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
 }
 
-// Hlavní inicializace aplikace
+function renderShell(currentModuleId, currentSubId) {
+  const moduleEntry = MODULE_REGISTRY[currentModuleId];
+  const current = moduleEntry ? moduleEntry : null;
+  const meta = current ? current.meta : null;
+
+  root.innerHTML = "";
+
+  const shell = document.createElement("div");
+  shell.className = "app-shell";
+
+  const sidebar = document.createElement("aside");
+  sidebar.className = "app-sidebar app-sidebar-collapsed";
+
+  const logo = document.createElement("div");
+  logo.className = "app-logo-wrap";
+
+  const logoIcon = document.createElement("div");
+  logoIcon.className = "app-logo-icon";
+  logoIcon.innerHTML = '<i class="fa-solid fa-layer-group"></i>';
+
+  const logoText = document.createElement("div");
+  logoText.className = "app-logo-text";
+  logoText.textContent = "CRM/ERP";
+
+  logo.appendChild(logoIcon);
+  logo.appendChild(logoText);
+  sidebar.appendChild(logo);
+
+  const badge = document.createElement("div");
+  badge.className = "badge";
+  badge.innerHTML = '<i class="fa-regular fa-circle-dot"></i><span>statická verze</span>';
+  sidebar.appendChild(badge);
+
+  const nav = document.createElement("nav");
+  nav.className = "app-nav";
+
+  activeModules.forEach((id) => {
+    const entry = MODULE_REGISTRY[id];
+    if (!entry) return;
+    const mMeta = entry.meta || {};
+    const item = document.createElement("div");
+    item.className = "nav-item";
+    if (id === currentModuleId) {
+      item.classList.add("active");
+    }
+
+    const link = document.createElement("a");
+    link.href = `#/${id}`;
+
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "nav-icon";
+    const iconClass = mMeta.iconClass || "fa-solid fa-circle";
+    iconWrap.innerHTML = `<i class="${iconClass}"></i>`;
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "nav-label";
+    const moduleLabel = resolveLabel(mMeta, entry.id || id);
+    labelSpan.textContent = moduleLabel;
+
+    link.appendChild(iconWrap);
+    link.appendChild(labelSpan);
+    item.appendChild(link);
+
+    if (Array.isArray(mMeta.navItems) && mMeta.navItems.length) {
+      const subList = document.createElement("div");
+      subList.className = "nav-submenu";
+      mMeta.navItems.forEach((sub) => {
+        const subItem = document.createElement("div");
+        subItem.className = "nav-subitem";
+
+        const subLink = document.createElement("a");
+        const subLabel = resolveNavItemLabel(sub, sub.id);
+        const subId = sub.id || null;
+        const hrefSuffix = subId ? `/${subId}` : "";
+        subLink.href = `#/${id}${hrefSuffix}`;
+        subLink.textContent = subLabel;
+
+        if (id === currentModuleId && subId === currentSubId) {
+          subItem.classList.add("active");
+        }
+
+        subItem.appendChild(subLink);
+        subList.appendChild(subItem);
+      });
+      item.appendChild(subList);
+    }
+
+    nav.appendChild(item);
+  });
+
+  sidebar.appendChild(nav);
+
+  const main = document.createElement("main");
+  main.className = "app-main";
+
+  const header = document.createElement("div");
+  header.className = "app-header";
+
+  const title = document.createElement("h2");
+  let baseTitle = current
+    ? resolveLabel(meta, currentModuleId)
+    : "Neznámý modul";
+
+  if (meta && Array.isArray(meta.navItems) && currentSubId) {
+    const sub = meta.navItems.find((s) => s.id === currentSubId);
+    if (sub) {
+      const subLabel = resolveNavItemLabel(sub, "");
+      if (subLabel) {
+        baseTitle = baseTitle + " – " + subLabel;
+      }
+    }
+  }
+  title.textContent = baseTitle;
+  header.appendChild(title);
+
+  const info = document.createElement("div");
+  info.className = "muted";
+  info.textContent =
+    "Ukázkový skeleton – statické HTML/JS. Konfigurace aplikace, uživatelů i modulů se ukládá do localStorage.";
+  header.appendChild(info);
+
+  const themeToggle = document.createElement("button");
+  themeToggle.type = "button";
+  themeToggle.className = "theme-toggle";
+
+  function updateThemeToggleLabel() {
+    const isDark = document.body.classList.contains("theme-dark");
+    themeToggle.innerHTML = isDark
+      ? '<i class="fa-regular fa-sun"></i><span> Světlý režim</span>'
+      : '<i class="fa-regular fa-moon"></i><span> Tmavý režim</span>';
+  }
+
+  themeToggle.addEventListener("click", () => {
+    const isDark = document.body.classList.contains("theme-dark");
+    const next = isDark ? "light" : "dark";
+    applyTheme(next);
+    updateThemeToggleLabel();
+  });
+
+  updateThemeToggleLabel();
+  header.appendChild(themeToggle);
+
+  main.appendChild(header);
+
+  const contentCard = document.createElement("div");
+  contentCard.className = "card";
+
+  const renderer =
+    current && typeof current.render === "function" ? current.render : null;
+
+  if (renderer) {
+    renderer(contentCard, {
+      activeModules: [...activeModules],
+      moduleRegistry: MODULE_REGISTRY,
+      appConfig: appConfigForCore,
+      currentUser,
+      currentSubId,
+      language: currentLanguage,
+    });
+  } else {
+    contentCard.innerHTML = "<p>Modul nebyl nalezen.</p>";
+  }
+
+  main.appendChild(contentCard);
+
+  shell.appendChild(sidebar);
+  shell.appendChild(main);
+  root.appendChild(shell);
+}
+
 async function init() {
+  initTheme();
+
   root.innerHTML = '<div class="app-loading">Načítám aplikaci…</div>';
 
-  // 1) Definice aplikace (super-admin, default moduly, modulové defaulty)
-  appDefinition = await loadAppDefinition();
+  try {
+    appDefinition = await loadAppDefinition();
+  } catch (err) {
+    console.error(err);
+    root.innerHTML =
+      '<div class="app-error">Nepodařilo se načíst konfiguraci aplikace (config/app.json).</div>';
+    return;
+  }
 
-  // 2) Přihlášený uživatel
+  await loadModulesFromManifest();
+
+  if (!Object.keys(MODULE_REGISTRY).length) {
+    root.innerHTML =
+      '<div class="app-error">Nebyl nalezen žádný modul. Zkontrolujte config/modules.json.</div>';
+    return;
+  }
+
   currentUser = loadCurrentUser();
+
   if (!currentUser) {
     renderLogin();
     return;
   }
 
-  // 3) Konfigurace (app_config_v2 + defaulty)
-  await prepareConfiguration();
+  await initAppAfterLogin();
+}
 
-  if (!activeModules.length) {
-    root.innerHTML =
-      '<div class="app-error">Nenalezen žádný aktivní modul. Zkontroluj config/app.json nebo aplikaci restartuj.</div>';
-    return;
-  }
+async function initAppAfterLogin() {
+  prepareConfiguration();
 
-  // 4) Routing + render
   const route = getCurrentRoute();
   const moduleId = activeModules.includes(route.moduleId)
     ? route.moduleId
     : activeModules[0];
+  const currentSubId = route.subId || null;
 
-  if (moduleId !== route.moduleId) {
-    navigateTo(moduleId);
+  if (moduleId !== route.moduleId || currentSubId !== route.subId) {
+    navigateTo(moduleId, currentSubId);
     return;
   }
 
-  renderShell(moduleId);
+  renderShell(moduleId, currentSubId);
 
   listenRouteChange((r) => {
     const id = activeModules.includes(r.moduleId) ? r.moduleId : activeModules[0];
-    renderShell(id);
+    const subId = r.subId || null;
+    renderShell(id, subId);
   });
 }
 

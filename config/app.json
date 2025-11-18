@@ -1,0 +1,20 @@
+{
+  "superAdmin": {
+    "username": "admin",
+    "password": "admin"
+  },
+  "defaultEnabledModules": [
+    "config",
+    "crm",
+    "erp"
+  ],
+  "modules": {
+    "crm": {
+      "defaultCity": "Praha"
+    },
+    "erp": {
+      "defaultCurrency": "CZK"
+    },
+    "config": {}
+  }
+}
