@@ -284,6 +284,60 @@ function renderShell(currentModuleId, currentSubId) {
 
   sidebar.appendChild(nav);
 
+  const userPanel = document.createElement("div");
+  userPanel.className = "user-panel";
+
+  const userInfo = document.createElement("div");
+  userInfo.className = "user-info";
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  const initials = (currentUser && currentUser.username && currentUser.username[0]) || "S";
+  avatar.textContent = initials.toUpperCase();
+  const userName = document.createElement("div");
+  userName.className = "user-name";
+  userName.textContent = currentUser ? currentUser.username : "super-admin";
+  userInfo.appendChild(avatar);
+  userInfo.appendChild(userName);
+  userPanel.appendChild(userInfo);
+
+  const userActions = document.createElement("div");
+  userActions.className = "user-actions";
+
+  const themeToggle = document.createElement("button");
+  themeToggle.type = "button";
+  themeToggle.className = "theme-toggle";
+
+  function updateThemeToggleLabel() {
+    const isDark = document.body.classList.contains("theme-dark");
+    themeToggle.innerHTML = isDark
+      ? '<i class="fa-regular fa-sun"></i><span> Světlý režim</span>'
+      : '<i class="fa-regular fa-moon"></i><span> Tmavý režim</span>';
+  }
+
+  themeToggle.addEventListener("click", () => {
+    const isDark = document.body.classList.contains("theme-dark");
+    const next = isDark ? "light" : "dark";
+    applyTheme(next);
+    updateThemeToggleLabel();
+  });
+
+  updateThemeToggleLabel();
+  userActions.appendChild(themeToggle);
+
+  const logoutBtn = document.createElement("button");
+  logoutBtn.type = "button";
+  logoutBtn.textContent = "Odhlásit";
+  logoutBtn.addEventListener("click", () => {
+    clearCurrentUser();
+    currentUser = null;
+    navigateTo("config", null);
+    renderLogin();
+  });
+  userActions.appendChild(logoutBtn);
+
+  userPanel.appendChild(userActions);
+  sidebar.appendChild(userPanel);
+
   const main = document.createElement("main");
   main.className = "app-main";
 
@@ -312,40 +366,6 @@ function renderShell(currentModuleId, currentSubId) {
   info.textContent =
     "Ukázkový skeleton – statické HTML/JS. Konfigurace aplikace, uživatelů i modulů se ukládá do localStorage.";
   header.appendChild(info);
-
-  const themeToggle = document.createElement("button");
-  themeToggle.type = "button";
-  themeToggle.className = "theme-toggle";
-
-  function updateThemeToggleLabel() {
-    const isDark = document.body.classList.contains("theme-dark");
-    themeToggle.innerHTML = isDark
-      ? '<i class="fa-regular fa-sun"></i><span> Světlý režim</span>'
-      : '<i class="fa-regular fa-moon"></i><span> Tmavý režim</span>';
-  }
-
-  themeToggle.addEventListener("click", () => {
-    const isDark = document.body.classList.contains("theme-dark");
-    const next = isDark ? "light" : "dark";
-    applyTheme(next);
-    updateThemeToggleLabel();
-  });
-
-  updateThemeToggleLabel();
-  header.appendChild(themeToggle);
-
-  // odhlášení (volitelné)
-  const logoutBtn = document.createElement("button");
-  logoutBtn.type = "button";
-  logoutBtn.style.marginLeft = "0.5rem";
-  logoutBtn.textContent = "Odhlásit";
-  logoutBtn.addEventListener("click", () => {
-    clearCurrentUser();
-    currentUser = null;
-    navigateTo("config", null);
-    renderLogin();
-  });
-  header.appendChild(logoutBtn);
 
   main.appendChild(header);
 
