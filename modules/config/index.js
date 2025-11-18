@@ -469,7 +469,7 @@ function renderConfig(container, ctx) {
     dbText.textContent =
       (databaseConfig.host
         ? `${databaseConfig.host}:${databaseConfig.port || 5432}/${
-            databaseConfig.database || ""`
+            databaseConfig.database || ""}`
         : lang === "en"
         ? "Database connection is not configured yet."
         : "Databázové připojení zatím není nastaveno.") +
@@ -526,8 +526,7 @@ function renderConfig(container, ctx) {
           u.storage === "database"
             ? (lang === "en" ? "Database" : "Databáze") +
               ` (${databaseConfig.host || "localhost"}/${
-                databaseConfig.database || "-"
-              })`
+                databaseConfig.database || "-"})`
             : (lang === "en" ? "Local: " : "Lokální: ") + (u.profilePath || "-");
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${u.id}</td><td>${u.username}</td><td>${u.role}</td><td>${defaultModule}</td><td>${permissionSummary}</td><td>${storageLabel}</td>`;
