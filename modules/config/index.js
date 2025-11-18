@@ -466,10 +466,13 @@ function renderConfig(container, ctx) {
     dbHeadline.textContent =
       lang === "en" ? "Database target" : "Cílová databáze";
     const dbText = document.createElement("p");
+    const databaseTarget = databaseConfig.host
+      ? `${databaseConfig.host}:${databaseConfig.port || 5432}/${
+          databaseConfig.database || ""}`
+      : null;
     dbText.textContent =
-      (databaseConfig.host
-        ? `${databaseConfig.host}:${databaseConfig.port || 5432}/${
-            databaseConfig.database || ""}`
+      (databaseTarget
+        ? databaseTarget
         : lang === "en"
         ? "Database connection is not configured yet."
         : "Databázové připojení zatím není nastaveno.") +
