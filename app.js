@@ -30,6 +30,7 @@ function resolveNavItemLabel(itemMeta, fallback) {
 }
 
 const THEME_STORAGE_KEY = "app_theme_v1";
+const SIDEBAR_STATE_KEY = "app_sidebar_state_v1";
 
 function applyTheme(theme) {
   const t = theme === "dark" ? "dark" : "light";
@@ -64,6 +65,36 @@ let appConfigForCore = {
 };
 let activeModules = [];
 let currentUser = null;
+let isSidebarCollapsed = false;
+
+function readStoredSidebarState() {
+  if (typeof localStorage === "undefined") {
+    return false;
+  }
+  try {
+    const stored = localStorage.getItem(SIDEBAR_STATE_KEY);
+    return stored === "1";
+  } catch (err) {
+    console.warn("Sidebar: nelze načíst stav", err);
+    return false;
+  }
+}
+
+function persistSidebarState(collapsed) {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  try {
+    localStorage.setItem(SIDEBAR_STATE_KEY, collapsed ? "1" : "0");
+  } catch (err) {
+    console.warn("Sidebar: nelze uložit stav", err);
+  }
+}
+
+function setSidebarCollapsed(nextState) {
+  isSidebarCollapsed = !!nextState;
+  persistSidebarState(isSidebarCollapsed);
+}
 
 async function loadModulesFromDirectory() {
   let manifest = null;
@@ -227,7 +258,10 @@ function renderShell(currentModuleId, currentSubId) {
   shell.className = "app-shell";
 
   const sidebar = document.createElement("aside");
-  sidebar.className = "app-sidebar app-sidebar-collapsed";
+  sidebar.className = "app-sidebar";
+  if (isSidebarCollapsed) {
+    sidebar.classList.add("app-sidebar-collapsed");
+  }
 
   const logo = document.createElement("div");
   logo.className = "app-logo-wrap";
@@ -242,7 +276,39 @@ function renderShell(currentModuleId, currentSubId) {
 
   logo.appendChild(logoIcon);
   logo.appendChild(logoText);
-  sidebar.appendChild(logo);
+
+  const sidebarHeader = document.createElement("div");
+  sidebarHeader.className = "sidebar-header";
+  sidebarHeader.appendChild(logo);
+
+  const sidebarToggle = document.createElement("button");
+  sidebarToggle.type = "button";
+  sidebarToggle.className = "sidebar-toggle";
+
+  function updateSidebarToggleUi() {
+    if (isSidebarCollapsed) {
+      sidebarToggle.innerHTML =
+        '<i class="fa-solid fa-angles-right" aria-hidden="true"></i>';
+      sidebarToggle.title = "Rozbalit navigaci";
+      sidebarToggle.setAttribute("aria-label", "Rozbalit navigaci");
+      sidebar.classList.add("app-sidebar-collapsed");
+    } else {
+      sidebarToggle.innerHTML =
+        '<i class="fa-solid fa-angles-left" aria-hidden="true"></i>';
+      sidebarToggle.title = "Sbalit navigaci";
+      sidebarToggle.setAttribute("aria-label", "Sbalit navigaci");
+      sidebar.classList.remove("app-sidebar-collapsed");
+    }
+  }
+
+  sidebarToggle.addEventListener("click", () => {
+    setSidebarCollapsed(!isSidebarCollapsed);
+    updateSidebarToggleUi();
+  });
+
+  updateSidebarToggleUi();
+  sidebarHeader.appendChild(sidebarToggle);
+  sidebar.appendChild(sidebarHeader);
 
   const badge = document.createElement("div");
   badge.className = "badge";
@@ -256,10 +322,14 @@ function renderShell(currentModuleId, currentSubId) {
     const entry = MODULE_REGISTRY[id];
     if (!entry) return;
     const mMeta = entry.meta || {};
+    const hasSubNav = Array.isArray(mMeta.navItems) && mMeta.navItems.length;
     const item = document.createElement("div");
     item.className = "nav-item";
     if (id === currentModuleId) {
       item.classList.add("active");
+    }
+    if (hasSubNav) {
+      item.classList.add("has-submenu");
     }
 
     const link = document.createElement("a");
@@ -277,9 +347,15 @@ function renderShell(currentModuleId, currentSubId) {
 
     link.appendChild(iconWrap);
     link.appendChild(labelSpan);
+    if (hasSubNav) {
+      const chevron = document.createElement("span");
+      chevron.className = "nav-chevron";
+      chevron.innerHTML = '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
+      link.appendChild(chevron);
+    }
     item.appendChild(link);
 
-    if (Array.isArray(mMeta.navItems) && mMeta.navItems.length) {
+    if (hasSubNav) {
       const subList = document.createElement("div");
       subList.className = "nav-submenu";
       mMeta.navItems.forEach((sub) => {
@@ -307,19 +383,6 @@ function renderShell(currentModuleId, currentSubId) {
   });
 
   sidebar.appendChild(nav);
-
-  const sidebarLogoutBtn = document.createElement("button");
-  sidebarLogoutBtn.className = "logout-button";
-  sidebarLogoutBtn.textContent = "Odhlásit se";
-  sidebarLogoutBtn.addEventListener("click", () => {
-    fetch("./config/logout.php", { method: "GET" })
-      .catch(() => {})
-      .finally(() => {
-        clearCurrentUser();
-        window.location.reload();
-      });
-  });
-  sidebar.appendChild(sidebarLogoutBtn);
 
   const userPanel = document.createElement("div");
   userPanel.className = "user-panel";
@@ -448,6 +511,7 @@ function renderShell(currentModuleId, currentSubId) {
 
 async function init() {
   initTheme();
+  isSidebarCollapsed = readStoredSidebarState();
 
   // registrace core služeb do serviceRegistry – moduly si je mohou vyzvednout
   registerService("storage", storageService);
