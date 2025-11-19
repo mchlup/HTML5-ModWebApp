@@ -1,5 +1,9 @@
 <?php
 session_start();
+
+// Super-admin má vidět všechny dostupné moduly bez ohledu na DB
+$isSuperAdmin = isset($_SESSION['role']) && $_SESSION['role'] === 'super-admin';
+
 header('Content-Type: application/json; charset=utf-8');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -88,7 +92,9 @@ foreach ($items as $name) {
         continue;
     }
     $id = $name;
-    if (is_array($enabledSet)) {
+     // Filtrování podle povolených modulů a práv uživatele
+    // Super-admin má výjimku – vidí vše, co existuje ve složce /modules
+    if (!$isSuperAdmin && is_array($enabledSet)) {
         if ($id !== 'config' && !isset($enabledSet[$id])) {
             continue;
         }
@@ -96,6 +102,7 @@ foreach ($items as $name) {
             continue;
         }
     }
+
     $result['modules'][] = [
         'id' => $id,
         'entry' => "./modules/{$id}/index.js",
