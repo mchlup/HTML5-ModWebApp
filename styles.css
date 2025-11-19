@@ -115,6 +115,41 @@ body.theme-light .app-logo-icon {
   font-weight: 600;
 }
 
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-bottom: 0.8rem;
+}
+
+.sidebar-toggle {
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease-out, border-color 0.2s ease-out;
+}
+
+body.theme-dark .sidebar-toggle {
+  border-color: rgba(148, 163, 184, 0.6);
+}
+
+.sidebar-toggle:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.app-sidebar.app-sidebar-collapsed .sidebar-header {
+  flex-direction: column;
+  align-items: center;
+}
+
 /* Sidebar collapsed */
 
 .app-sidebar.app-sidebar-collapsed {
@@ -234,6 +269,11 @@ body.theme-light .nav-item.active > a {
   transition: opacity 0.15s ease-out, transform 0.15s ease-out;
 }
 
+.app-sidebar:not(.app-sidebar-collapsed) .nav-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 /* Sidebar hover expand */
 
 .app-sidebar.app-sidebar-collapsed:hover {
@@ -263,6 +303,38 @@ body.theme-light .nav-item.active > a {
   gap: 0.1rem;
 }
 
+.nav-item.has-submenu .nav-submenu {
+  display: none;
+}
+
+.nav-item.has-submenu.active .nav-submenu {
+  display: flex;
+}
+
+.app-sidebar.app-sidebar-collapsed .nav-item.has-submenu.active .nav-submenu {
+  display: none;
+}
+
+.app-sidebar.app-sidebar-collapsed:hover .nav-item.has-submenu.active .nav-submenu {
+  display: flex;
+}
+
+.nav-chevron {
+  margin-left: auto;
+  font-size: 0.65rem;
+  opacity: 0.7;
+  transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+}
+
+.nav-item.active .nav-chevron {
+  transform: rotate(90deg);
+  opacity: 1;
+}
+
+.app-sidebar.app-sidebar-collapsed .nav-chevron {
+  display: none;
+}
+
 .nav-subitem a {
   font-size: 0.75rem;
   padding: 0.2rem 0.45rem;
@@ -290,15 +362,6 @@ body.theme-light .nav-subitem a:hover {
 .nav-subitem.active a {
   background: rgba(37, 99, 235, 0.4);
   color: #e5e7eb;
-}
-
-/* Hide submenu when collapsed and not hovered */
-.app-sidebar.app-sidebar-collapsed .nav-submenu {
-  display: none;
-}
-
-.app-sidebar.app-sidebar-collapsed:hover .nav-submenu {
-  display: flex;
 }
 
 /* Card & tables */
@@ -334,12 +397,53 @@ body.theme-light .card {
   font-size: 0.9rem;
 }
 
+.users-actions {
+  margin: 0.8rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.table-message {
+  text-align: center;
+  padding: 0.6rem 0.3rem;
+  font-style: italic;
+  color: rgba(15, 23, 42, 0.8);
+}
+
+.table-message.error {
+  color: #b91c1c;
+  font-style: normal;
+}
+
+body.theme-dark .table-message {
+  color: rgba(226, 232, 240, 0.85);
+}
+
+body.theme-dark .table-message.error {
+  color: #fecaca;
+}
+
 body.theme-dark .table th {
   background: radial-gradient(circle at top left, rgba(37, 99, 235, 0.3), rgba(15, 23, 42, 0.9));
 }
 
 body.theme-light .table th {
   background: rgba(239, 246, 255, 0.95);
+}
+
+.form-error {
+  margin: 0.4rem 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  background: rgba(248, 113, 113, 0.18);
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+body.theme-dark .form-error {
+  background: rgba(248, 113, 113, 0.3);
+  color: #fee2e2;
 }
 
 /* Forms */
@@ -642,6 +746,34 @@ body.theme-light .theme-toggle {
   background: linear-gradient(to right, #3b82f6, #22c55e);
   color: #f8fafc;
   cursor: pointer;
+}
+
+.secondary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(148, 163, 184, 0.1);
+  color: inherit;
+  cursor: pointer;
+}
+
+body.theme-dark .secondary-action {
+  border-color: rgba(148, 163, 184, 0.8);
+  background: rgba(15, 23, 42, 0.6);
+  color: #e5e7eb;
+}
+
+body.theme-light .secondary-action {
+  background: rgba(148, 163, 184, 0.15);
+  color: #0f172a;
+}
+
+.secondary-action:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 /* Modal */
