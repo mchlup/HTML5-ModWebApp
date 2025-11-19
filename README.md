@@ -1,4 +1,4 @@
-# Modulární CRM/ERP Webová Aplikace – v9
+# "Flexo" - Modulární Webová Aplikace
 
 Tato verze obsahuje rozšířené **jádro aplikace** (core služby), aby byla appka robustní a připravená na budoucí rozšiřování:
 - automatická detekce modulů podle složek v `/modules`,
