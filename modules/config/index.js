@@ -6,6 +6,7 @@ import { loadDatabaseConfig, saveDatabaseConfig } from "./db_config.js";
 
 const DATABASE_API_ENDPOINT = "./config/database.php";
 const USERS_API_ENDPOINT = "./config/users.php";
+const PERMISSIONS_API_ENDPOINT = "./config/permissions.php";
 
 async function requestDatabaseAction(action, config) {
   try {
@@ -76,6 +77,15 @@ function renderConfig(container, ctx) {
   let databaseConfig = loadDatabaseConfig();
   let databaseStatus = { state: "idle", message: "" };
   const usersState = { loading: false, loaded: false, error: null };
+  const permissionsState = {
+    loading: false,
+    loaded: false,
+    saving: false,
+    error: null,
+    users: [],
+    modules: [],
+    matrix: {},
+  };
   appConfig.moduleConfig = appConfig.moduleConfig || {};
 
   function normalizeDbUser(raw) {
@@ -153,7 +163,7 @@ function renderConfig(container, ctx) {
     { id: "modules", label: lang === "en" ? "Modules" : "Moduly" },
     { id: "database", label: lang === "en" ? "Database" : "Databáze" },
     { id: "users", label: lang === "en" ? "Users" : "Uživatelé" },
-    { id: "permissions", label: lang === "en" ? "Permissions (sketch)" : "Oprávnění (náčrt)" },
+    { id: "permissions", label: lang === "en" ? "Permissions" : "Oprávnění" },
   ];
 
   const headerBar = document.createElement("div");
@@ -957,38 +967,258 @@ function renderConfig(container, ctx) {
     }
   }
 
+  async function loadPermissionsData() {
+    if (permissionsState.loading) return;
+    permissionsState.loading = true;
+    permissionsState.error = null;
+    renderPermissionsSection();
+
+    try {
+      const response = await fetch(PERMISSIONS_API_ENDPOINT, {
+        headers: { Accept: "application/json" },
+      });
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (err) {
+        throw new Error(
+          lang === "en"
+            ? "Server returned an invalid response."
+            : "Server vrátil neplatnou odpověď."
+        );
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(
+          (data && data.message) ||
+            (lang === "en"
+              ? "Failed to load permissions from the database."
+              : "Načtení oprávnění z databáze selhalo.")
+        );
+      }
+
+      const users = Array.isArray(data.users) ? data.users : [];
+      const modules = Array.isArray(data.modules) ? data.modules : [];
+
+      const matrix = {};
+      users.forEach((u) => {
+        if (!u) return;
+        matrix[u.id] = {};
+      });
+      if (Array.isArray(data.permissions)) {
+        data.permissions.forEach((p) => {
+          const uid = p.user_id;
+          const mid = p.module_id;
+          const rights = p.rights || "none";
+          if (!matrix[uid]) matrix[uid] = {};
+          matrix[uid][mid] = rights;
+        });
+      }
+
+      permissionsState.users = users;
+      permissionsState.modules = modules;
+      permissionsState.matrix = matrix;
+      permissionsState.loaded = true;
+    } catch (err) {
+      permissionsState.error =
+        err instanceof Error
+          ? err.message
+          : lang === "en"
+          ? "Unknown error while loading permissions."
+          : "Neznámá chyba při načítání oprávnění.";
+    } finally {
+      permissionsState.loading = false;
+      renderPermissionsSection();
+    }
+  }
+
+  async function savePermissionsMatrix() {
+    if (!permissionsState.loaded || permissionsState.saving) return;
+    permissionsState.saving = true;
+    renderPermissionsSection();
+
+    const payload = [];
+    Object.keys(permissionsState.matrix).forEach((userId) => {
+      const row = permissionsState.matrix[userId] || {};
+      Object.keys(row).forEach((moduleId) => {
+        payload.push({
+          user_id: Number(userId),
+          module_id: moduleId,
+          rights: row[moduleId] || "none",
+        });
+      });
+    });
+
+    try {
+      const response = await fetch(PERMISSIONS_API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permissions: payload }),
+      });
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (err) {
+        throw new Error(
+          lang === "en"
+            ? "Server returned an invalid response."
+            : "Server vrátil neplatnou odpověď."
+        );
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(
+          (data && data.message) ||
+            (lang === "en"
+              ? "Failed to save permissions."
+              : "Uložení oprávnění selhalo.")
+        );
+      }
+      showToast(
+        lang === "en" ? "Permissions saved." : "Oprávnění byla uložena."
+      );
+    } catch (err) {
+      permissionsState.error =
+        err instanceof Error
+          ? err.message
+          : lang === "en"
+          ? "Unknown error while saving permissions."
+          : "Neznámá chyba při ukládání oprávnění.";
+    } finally {
+      permissionsState.saving = false;
+      renderPermissionsSection();
+    }
+  }
+
   function renderPermissionsSection() {
     bodyEl.innerHTML = "";
+
+    if (permissionsState.error) {
+      const errorBox = document.createElement("div");
+      errorBox.className = "config-error";
+      errorBox.textContent = permissionsState.error;
+      bodyEl.appendChild(errorBox);
+    }
+
+    if (!permissionsState.loaded && !permissionsState.loading) {
+      // spustíme načítání a ukážeme text
+      loadPermissionsData();
+      const loading = document.createElement("p");
+      loading.className = "muted";
+      loading.textContent =
+        lang === "en"
+          ? "Loading permissions from the database..."
+          : "Načítám oprávnění z databáze...";
+      bodyEl.appendChild(loading);
+      return;
+    }
+
+    if (permissionsState.loading) {
+      const loading = document.createElement("p");
+      loading.className = "muted";
+      loading.textContent =
+        lang === "en"
+          ? "Loading permissions from the database..."
+          : "Načítám oprávnění z databáze...";
+      bodyEl.appendChild(loading);
+      return;
+    }
+
     const info = document.createElement("p");
     info.className = "muted";
-    info.innerHTML =
+    info.textContent =
       lang === "en"
-        ? "Permissions are stored in the database (table app_permissions). This section is illustrative."
-        : "Oprávnění jsou ukládána v databázi (tabulka app_permissions). Tato sekce je ilustrační.";
+        ? "Set per-user access levels for each module. Changes are stored in the app_permissions table."
+        : "Nastavte přístupová práva pro jednotlivé uživatele a moduly. Změny se ukládají do tabulky app_permissions.";
     bodyEl.appendChild(info);
 
-    const dbReminder = document.createElement("div");
-    dbReminder.className = "config-tip";
-    const reminderTitle = document.createElement("strong");
-    reminderTitle.textContent = lang === "en" ? "Data source" : "Zdroj dat";
-    const reminderText = document.createElement("p");
-    reminderText.textContent =
-      lang === "en"
-        ? "Once the Databáze tab is configured, permissions can be persisted to the same schema as users."
-        : "Jakmile nastavíte záložku Databáze, mohou se oprávnění ukládat do stejného schématu jako uživatelé.";
-    const reminderBtn = document.createElement("button");
-    reminderBtn.type = "button";
-    reminderBtn.textContent = lang === "en" ? "Configure database" : "Nastavit databázi";
-    reminderBtn.addEventListener("click", () => {
-      currentTab = "database";
-      navigateTo("config", "database");
-      renderTabs();
-      renderBody();
+    const toolbar = document.createElement("div");
+    toolbar.className = "config-toolbar";
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.textContent =
+      permissionsState.saving
+        ? lang === "en"
+          ? "Saving..."
+          : "Ukládám..."
+        : lang === "en"
+        ? "Save permissions"
+        : "Uložit oprávnění";
+    saveBtn.disabled = permissionsState.saving;
+    saveBtn.addEventListener("click", () => {
+      savePermissionsMatrix();
     });
-    dbReminder.appendChild(reminderTitle);
-    dbReminder.appendChild(reminderText);
-    dbReminder.appendChild(reminderBtn);
-    bodyEl.appendChild(dbReminder);
+    toolbar.appendChild(saveBtn);
+    bodyEl.appendChild(toolbar);
+
+    if (!permissionsState.users.length || !permissionsState.modules.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent =
+        lang === "en"
+          ? "No users or modules found in the database."
+          : "V databázi nebyli nalezeni žádní uživatelé ani moduly.";
+      bodyEl.appendChild(empty);
+      return;
+    }
+
+    const table = document.createElement("table");
+    table.className = "permissions-table";
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    const userTh = document.createElement("th");
+    userTh.textContent = lang === "en" ? "User" : "Uživatel";
+    headRow.appendChild(userTh);
+    permissionsState.modules.forEach((mod) => {
+      const th = document.createElement("th");
+      th.textContent = mod.name || mod.id;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    permissionsState.users.forEach((user) => {
+      const tr = document.createElement("tr");
+      const userTd = document.createElement("td");
+      userTd.textContent = `${user.username} (${user.role || "user"})`;
+      tr.appendChild(userTd);
+
+      permissionsState.modules.forEach((mod) => {
+        const td = document.createElement("td");
+        const select = document.createElement("select");
+        const row = permissionsState.matrix[user.id] || {};
+        const current = row[mod.id] || "none";
+
+        [
+          { value: "none", labelCs: "Bez přístupu", labelEn: "No access" },
+          { value: "read", labelCs: "Čtení", labelEn: "Read" },
+          { value: "manage", labelCs: "Plný přístup", labelEn: "Full access" },
+        ].forEach((perm) => {
+          const opt = document.createElement("option");
+          opt.value = perm.value;
+          opt.textContent = lang === "en" ? perm.labelEn : perm.labelCs;
+          if (perm.value === current) {
+            opt.selected = true;
+          }
+          select.appendChild(opt);
+        });
+
+        select.addEventListener("change", () => {
+          if (!permissionsState.matrix[user.id]) {
+            permissionsState.matrix[user.id] = {};
+          }
+          permissionsState.matrix[user.id][mod.id] = select.value;
+        });
+
+        td.appendChild(select);
+        tr.appendChild(td);
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    bodyEl.appendChild(table);
   }
 
   function renderBody() {
