@@ -5,6 +5,7 @@ import { showToast } from "../../core/uiService.js";
 import { loadDatabaseConfig, saveDatabaseConfig } from "./db_config.js";
 
 const DATABASE_API_ENDPOINT = "./config/database.php";
+const USERS_API_ENDPOINT = "./config/users.php";
 
 async function requestDatabaseAction(action, config) {
   try {
@@ -74,7 +75,76 @@ function renderConfig(container, ctx) {
   let users = Array.isArray(appConfig.users) ? appConfig.users : [];
   let databaseConfig = loadDatabaseConfig();
   let databaseStatus = { state: "idle", message: "" };
+  const usersState = { loading: false, loaded: false, error: null };
   appConfig.moduleConfig = appConfig.moduleConfig || {};
+
+  function normalizeDbUser(raw) {
+    if (!raw) {
+      return null;
+    }
+    return {
+      id: typeof raw.id === "number" ? raw.id : parseInt(raw.id, 10) || 0,
+      username: raw.username || "",
+      role: raw.role || "user",
+      permissions: raw.permissions || {},
+      storage: raw.storage || "database",
+      profilePath: raw.profilePath || null,
+      appConfig: raw.appConfig || { defaultModule: "config" },
+      modules: raw.modules || {},
+    };
+  }
+
+  async function syncUsersWithDatabase(options = {}) {
+    const { force = false, onUpdate } = options;
+    if (usersState.loading) return;
+    if (usersState.loaded && !force) return;
+    usersState.loading = true;
+    usersState.error = null;
+    if (typeof onUpdate === "function") {
+      onUpdate();
+    }
+    try {
+      const response = await fetch(USERS_API_ENDPOINT, {
+        headers: { Accept: "application/json" },
+      });
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (err) {
+        throw new Error(
+          lang === "en"
+            ? "Server returned an invalid response."
+            : "Server vrátil neplatnou odpověď."
+        );
+      }
+      if (!response.ok || !data || !data.success) {
+        throw new Error(
+          (data && data.message) ||
+            (lang === "en"
+              ? "Failed to load users from the database."
+              : "Načtení uživatelů z databáze selhalo.")
+        );
+      }
+      const list = Array.isArray(data.users)
+        ? data.users.map((u) => normalizeDbUser(u)).filter(Boolean)
+        : [];
+      users = list;
+      appConfig.users = users;
+      usersState.loaded = true;
+    } catch (err) {
+      usersState.error =
+        err instanceof Error
+          ? err.message
+          : lang === "en"
+          ? "Unknown error while loading users."
+          : "Neznámá chyba při načítání uživatelů.";
+    } finally {
+      usersState.loading = false;
+      if (typeof onUpdate === "function") {
+        onUpdate();
+      }
+    }
+  }
 
   const tabsEl = document.createElement("div");
   tabsEl.className = "tabs";
@@ -498,6 +568,7 @@ function renderConfig(container, ctx) {
 
   function renderUsersSection() {
     bodyEl.innerHTML = "";
+    databaseConfig = loadDatabaseConfig({ forceReload: true });
 
     const info = document.createElement("p");
     info.className = "muted";
@@ -543,12 +614,26 @@ function renderConfig(container, ctx) {
     dbSummary.appendChild(dbBtn);
     bodyEl.appendChild(dbSummary);
 
+    const actionsBar = document.createElement("div");
+    actionsBar.className = "users-actions";
+
     const addUserBtn = document.createElement("button");
     addUserBtn.type = "button";
     addUserBtn.className = "primary-action";
     addUserBtn.textContent = lang === "en" ? "Add user" : "Přidat uživatele";
     addUserBtn.addEventListener("click", () => openUserModal());
-    bodyEl.appendChild(addUserBtn);
+
+    const reloadUsersBtn = document.createElement("button");
+    reloadUsersBtn.type = "button";
+    reloadUsersBtn.className = "secondary-action";
+    reloadUsersBtn.textContent = lang === "en" ? "Reload list" : "Načíst znovu";
+    reloadUsersBtn.addEventListener("click", () => {
+      syncUsersWithDatabase({ force: true, onUpdate: renderUsersTable });
+    });
+
+    actionsBar.appendChild(addUserBtn);
+    actionsBar.appendChild(reloadUsersBtn);
+    bodyEl.appendChild(actionsBar);
 
     const table = document.createElement("table");
     table.className = "table";
@@ -564,6 +649,41 @@ function renderConfig(container, ctx) {
 
     function renderUsersTable() {
       tbody.innerHTML = "";
+      reloadUsersBtn.disabled = usersState.loading;
+      if (usersState.loading) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.className = "table-message";
+        td.textContent =
+          lang === "en" ? "Loading users from database..." : "Načítám uživatele z databáze...";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      if (usersState.error) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.className = "table-message error";
+        td.textContent = usersState.error;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      if (!users.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.className = "table-message";
+        td.textContent =
+          lang === "en"
+            ? "No users were found in the database."
+            : "V databázi nebyli nalezeni žádní uživatelé.";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
       users.forEach((u) => {
         const defaultModule = (u.appConfig && u.appConfig.defaultModule) || "config";
         const permissionSummary =
@@ -591,6 +711,10 @@ function renderConfig(container, ctx) {
     }
 
     renderUsersTable();
+
+    if (!usersState.loaded) {
+      syncUsersWithDatabase({ force: true, onUpdate: renderUsersTable });
+    }
 
     function openUserModal() {
       const overlay = document.createElement("div");
@@ -716,6 +840,10 @@ function renderConfig(container, ctx) {
         : "Pro sdílené úložiště nastavte nejprve záložku Databáze.";
       storageLabel.appendChild(storageHint);
 
+      const errorBox = document.createElement("div");
+      errorBox.className = "form-error";
+      errorBox.style.display = "none";
+
       const submitBtn = document.createElement("button");
       submitBtn.type = "submit";
       submitBtn.textContent = lang === "en" ? "Create user" : "Vytvořit uživatele";
@@ -725,9 +853,10 @@ function renderConfig(container, ctx) {
       form.appendChild(roleLabel);
       form.appendChild(permSection);
       form.appendChild(storageLabel);
+      form.appendChild(errorBox);
       form.appendChild(submitBtn);
 
-      form.addEventListener("submit", (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault();
         const username = inputUser.value.trim();
         if (!username) return;
@@ -739,29 +868,72 @@ function renderConfig(container, ctx) {
         });
         const storage = storageSelect.value;
 
-        const nextId = users.length ? users[users.length - 1].id + 1 : 1;
-        const defaultModule =
-          Object.keys(permissions).find((m) => permissions[m] !== "none") || "config";
-        const profilePath =
-          storage === "database"
-            ? `${databaseConfig.host || "db"}/${databaseConfig.database || "profiles"}`
-            : `/profiles/${username}`;
-        const newUser = {
-          id: nextId,
-          username,
-          password,
-          role,
-          permissions,
-          profilePath,
-          storage,
-          appConfig: { defaultModule },
-          modules: {},
-        };
+        errorBox.style.display = "none";
+        const originalText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = lang === "en" ? "Saving..." : "Ukládám...";
 
-        users = [...users, newUser];
-        appConfig.users = users;
-        renderUsersTable();
-        closeModal();
+        try {
+          const response = await fetch(USERS_API_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password, role, permissions }),
+          });
+          let data = null;
+          try {
+            data = await response.json();
+          } catch (err) {
+            throw new Error(
+              lang === "en"
+                ? "Server returned an invalid response."
+                : "Server vrátil neplatnou odpověď."
+            );
+          }
+          if (!response.ok || !data.success) {
+            throw new Error(
+              (data && data.message) ||
+                (lang === "en"
+                  ? "User could not be created."
+                  : "Uživatele se nepodařilo vytvořit.")
+            );
+          }
+
+          const defaultModule =
+            Object.keys(permissions).find((m) => permissions[m] !== "none") || "config";
+          const profilePath =
+            storage === "database"
+              ? `${databaseConfig.host || "db"}/${databaseConfig.database || "profiles"}`
+              : `/profiles/${username}`;
+
+          users = [
+            ...users,
+            {
+              ...normalizeDbUser(data.user),
+              permissions,
+              storage,
+              profilePath,
+              appConfig: { defaultModule },
+            },
+          ];
+          appConfig.users = users;
+          renderUsersTable();
+          closeModal();
+          showToast(
+            lang === "en" ? "User saved to database." : "Uživatel uložen do databáze."
+          );
+          syncUsersWithDatabase({ force: true, onUpdate: renderUsersTable });
+        } catch (err) {
+          errorBox.textContent =
+            err instanceof Error
+              ? err.message
+              : lang === "en"
+              ? "Unexpected error while saving user."
+              : "Neočekávaná chyba při ukládání uživatele.";
+          errorBox.style.display = "block";
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        }
       });
 
       overlay.addEventListener("click", (e) => {
