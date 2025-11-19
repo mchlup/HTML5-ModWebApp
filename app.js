@@ -133,13 +133,13 @@ function renderLogin() {
 
   const title = document.createElement("h1");
   title.className = "login-title";
-  title.textContent = "Modulární CRM/ERP – demo";
+  title.textContent = "Flexo";
   card.appendChild(title);
 
   const subtitle = document.createElement("p");
   subtitle.className = "login-subtitle";
   subtitle.textContent =
-    "Přihlaste se jako super-admin. Údaje jsou definovány v config/app.json.";
+    "Přihlaste se jako super-admin.";
   card.appendChild(subtitle);
 
   const form = document.createElement("form");
@@ -272,7 +272,7 @@ function renderShell(currentModuleId, currentSubId) {
 
   const logoText = document.createElement("div");
   logoText.className = "app-logo-text";
-  logoText.textContent = "CRM/ERP";
+  logoText.textContent = "Flexo";
 
   logo.appendChild(logoIcon);
   logo.appendChild(logoText);
@@ -472,7 +472,7 @@ function renderShell(currentModuleId, currentSubId) {
   const info = document.createElement("div");
   info.className = "muted";
   info.textContent =
-    "Ukázkový skeleton – statické HTML/JS. Konfigurace aplikace, uživatelů i modulů se ukládá do databáze.";
+    "Konfigurace aplikace, uživatelů i modulů se ukládá do databáze.";
   header.appendChild(info);
 
   main.appendChild(header);
