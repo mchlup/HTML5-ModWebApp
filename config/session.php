@@ -8,11 +8,19 @@ if (empty($_SESSION['username'])) {
     exit;
 }
 
+require_once __DIR__ . '/db_connect.php';
+
 $userId = $_SESSION['user_id'] ?? null;
 $username = $_SESSION['username'];
 $role = $_SESSION['role'] ?? 'user';
-
 $appConfigPath = __DIR__ . '/app.json';
+
+function respond(array $payload, int $status = 200): void
+{
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
 
 function loadAppDefinition(string $path): array
 {
@@ -58,64 +66,76 @@ $enabledModules = [];
 $permissions = [];
 $dbOk = false;
 
-require_once __DIR__ . '/db_connect.php';
-
+// Pokus 1: validace session přes DB
 try {
     $pdo = getDbConnection();
     $dbOk = true;
     if ($userId !== null) {
-        $stmt = $pdo->prepare('SELECT username, role FROM app_users WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, username, role FROM app_users WHERE id = ?');
         $stmt->execute([$userId]);
         if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $username = $row['username'];
             $role = $row['role'];
             $_SESSION['role'] = $role;
         }
-        $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
-        $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0) ?: [];
-        $permStmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
-        $permStmt->execute([$userId]);
-        while ($perm = $permStmt->fetch(PDO::FETCH_ASSOC)) {
-            $permissions[$perm['module_id']] = $perm['rights'];
+        try {
+            $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
+            $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0) ?: [];
+        } catch (Throwable $e) {
+            $enabledModules = [];
+        }
+        try {
+            $permStmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
+            $permStmt->execute([$userId]);
+            while ($perm = $permStmt->fetch(PDO::FETCH_ASSOC)) {
+                $permissions[$perm['module_id']] = $perm['rights'];
+            }
+        } catch (Throwable $e) {
+            $permissions = [];
         }
     }
 } catch (Throwable $e) {
     $dbOk = false;
 }
 
-if (!$dbOk && $role !== 'super-admin') {
-    http_response_code(503);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Databáze není dostupná.',
-    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-    exit;
-}
-
-if (!$dbOk && $role === 'super-admin') {
-    $enabledModules = !empty($definition['defaultEnabledModules']) && is_array($definition['defaultEnabledModules'])
-        ? $definition['defaultEnabledModules']
-        : listAvailableModules();
-    $permissions = ['*'];
-}
-
-if ($userId === null && empty($enabledModules)) {
-    $enabledModules = !empty($definition['defaultEnabledModules']) && is_array($definition['defaultEnabledModules'])
-        ? $definition['defaultEnabledModules']
-        : listAvailableModules();
-}
-
-if (!in_array('config', $enabledModules, true)) {
-    $enabledModules[] = 'config';
-}
-
-echo json_encode([
-    'success' => true,
-    'user' => [
-        'id' => $userId,
-        'username' => $username,
-        'role' => $role,
+if ($dbOk && $userId !== null) {
+    if (!in_array('config', $enabledModules, true)) {
+        $enabledModules[] = 'config';
+    }
+    respond([
+        'success' => true,
+        'user' => [
+            'id' => $userId,
+            'username' => $username,
+            'role' => $role,
+            'permissions' => $permissions,
+        ],
+        'enabledModules' => array_values(array_unique($enabledModules)),
         'permissions' => $permissions,
-    ],
-    'enabledModules' => $enabledModules,
-], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    ]);
+}
+
+// Pokus 2: fallback pro super-admina bez DB
+if (!$dbOk && $role === 'super-admin' && (int)$userId === 0) {
+    $enabledModules = listAvailableModules();
+    if (!in_array('config', $enabledModules, true)) {
+        $enabledModules[] = 'config';
+    }
+    $permissions = ['*' => 'full'];
+    respond([
+        'success' => true,
+        'user' => [
+            'id' => 0,
+            'username' => $username,
+            'role' => 'super-admin',
+            'permissions' => $permissions,
+        ],
+        'enabledModules' => array_values(array_unique($enabledModules)),
+        'permissions' => $permissions,
+    ]);
+}
+
+respond([
+    'success' => false,
+    'message' => 'Databáze nedostupná a aktuální session nelze ověřit.',
+], $dbOk ? 401 : 503);

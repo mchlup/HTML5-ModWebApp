@@ -1,18 +1,50 @@
 <?php
 session_start();
-
-// Super-admin má vidět všechny dostupné moduly bez ohledu na DB
-$isSuperAdmin = isset($_SESSION['role']) && $_SESSION['role'] === 'super-admin';
-
 header('Content-Type: application/json; charset=utf-8');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$isSuperAdmin = isset($_SESSION['role']) && $_SESSION['role'] === 'super-admin';
+
+function respond(array $payload, int $status = 200): void
+{
+    http_response_code($status);
+    echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function listModulesFromDisk(string $modulesDir): array
+{
+    $result = [];
+    if (!is_dir($modulesDir)) {
+        return $result;
+    }
+    foreach (scandir($modulesDir) as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $full = $modulesDir . '/' . $name;
+        if (!is_dir($full)) {
+            continue;
+        }
+        $indexJs = $full . '/index.js';
+        if (!file_exists($indexJs)) {
+            continue;
+        }
+        $result[] = [
+            'id' => $name,
+            'entry' => "./modules/{$name}/index.js",
+        ];
+    }
+    return $result;
+}
+
+if (empty($_SESSION['username'])) {
+    respond(['success' => false, 'message' => 'Uživatel není přihlášen.'], 401);
+}
 
 if ($method === 'POST') {
     if (empty($_SESSION['role']) || !in_array($_SESSION['role'], ['super-admin', 'admin'], true)) {
-        http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Nedostatečná oprávnění.']);
-        exit;
+        respond(['success' => false, 'message' => 'Nedostatečná oprávnění.'], 403);
     }
     $input = json_decode(file_get_contents('php://input'), true);
     $enabledModules = isset($input['enabledModules']) && is_array($input['enabledModules'])
@@ -21,10 +53,8 @@ if ($method === 'POST') {
     try {
         require_once __DIR__ . '/db_connect.php';
         $pdo = getDbConnection();
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Databázové připojení není dostupné.']);
-        exit;
+    } catch (Throwable $e) {
+        respond(['success' => false, 'message' => 'Databázové připojení není dostupné.'], 500);
     }
     $pdo->beginTransaction();
     try {
@@ -36,29 +66,24 @@ if ($method === 'POST') {
             }
         }
         $pdo->commit();
-        echo json_encode(['success' => true]);
-    } catch (Exception $e) {
+        respond(['success' => true]);
+    } catch (Throwable $e) {
         $pdo->rollBack();
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Uložení modulů selhalo.']);
+        respond(['success' => false, 'message' => 'Uložení modulů selhalo.'], 500);
     }
-    exit;
 }
 
 $baseDir = __DIR__ . '/..';
 $modulesDir = $baseDir . '/modules';
-$result = ['modules' => []];
-
-if (empty($_SESSION['username'])) {
-    echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    exit;
-}
 
 $enabledSet = null;
 $userPermissions = [];
+$dbAvailable = false;
+
 try {
     require_once __DIR__ . '/db_connect.php';
     $pdo = getDbConnection();
+    $dbAvailable = true;
     $stmt = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
     $enabledSet = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
     $enabledSet = $enabledSet ? array_flip($enabledSet) : [];
@@ -69,31 +94,31 @@ try {
             $userPermissions[$perm['module_id']] = $perm['rights'];
         }
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $enabledSet = null;
+    $dbAvailable = false;
 }
 
-if (!is_dir($modulesDir)) {
-    echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    exit;
+// Fallback bez DB pro super-admina
+if (!$dbAvailable) {
+    if ($isSuperAdmin && (int)($_SESSION['user_id'] ?? -1) === 0) {
+        $modules = listModulesFromDisk($modulesDir);
+        $enabledIds = array_map(fn($m) => $m['id'], $modules);
+        respond([
+            'success' => true,
+            'modules' => $modules,
+            'enabledModules' => $enabledIds,
+            'permissions' => ['*' => 'full'],
+        ]);
+    }
+    respond(['success' => false, 'message' => 'Databáze není dostupná.'], 503);
 }
 
-$items = scandir($modulesDir);
-foreach ($items as $name) {
-    if ($name === '.' || $name === '..') {
-        continue;
-    }
-    $full = $modulesDir . '/' . $name;
-    if (!is_dir($full)) {
-        continue;
-    }
-    $indexJs = $full . '/index.js';
-    if (!file_exists($indexJs)) {
-        continue;
-    }
-    $id = $name;
-     // Filtrování podle povolených modulů a práv uživatele
-    // Super-admin má výjimku – vidí vše, co existuje ve složce /modules
+$result = ['success' => true, 'modules' => []];
+$items = listModulesFromDisk($modulesDir);
+
+foreach ($items as $entry) {
+    $id = $entry['id'];
     if (!$isSuperAdmin && is_array($enabledSet)) {
         if ($id !== 'config' && !isset($enabledSet[$id])) {
             continue;
@@ -102,11 +127,10 @@ foreach ($items as $name) {
             continue;
         }
     }
-
-    $result['modules'][] = [
-        'id' => $id,
-        'entry' => "./modules/{$id}/index.js",
-    ];
+    $result['modules'][] = $entry;
 }
 
-echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+$result['enabledModules'] = array_keys($enabledSet ?? []);
+$result['permissions'] = $userPermissions;
+
+respond($result);

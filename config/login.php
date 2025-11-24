@@ -16,6 +16,13 @@ require_once __DIR__ . '/db_connect.php';
 
 $appConfigPath = __DIR__ . '/app.json';
 
+function respond(array $payload, int $status = 200): void
+{
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
+
 function loadAppDefinition(string $path): array
 {
     if (!file_exists($path)) {
@@ -61,6 +68,7 @@ $permissions = [];
 $enabledModules = [];
 $dbAvailable = false;
 
+// Pokus 1: DB login
 try {
     $pdo = getDbConnection();
     $dbAvailable = true;
@@ -73,19 +81,32 @@ try {
             'username' => $row['username'],
             'role' => $row['role'],
         ];
-        $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
-        $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0) ?: [];
-        $permStmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
-        $permStmt->execute([$userData['id']]);
-        while ($perm = $permStmt->fetch(PDO::FETCH_ASSOC)) {
-            $permissions[$perm['module_id']] = $perm['rights'];
+        try {
+            $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
+            $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0) ?: [];
+        } catch (Throwable $e) {
+            $enabledModules = [];
+        }
+        try {
+            $permStmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
+            $permStmt->execute([$userData['id']]);
+            while ($perm = $permStmt->fetch(PDO::FETCH_ASSOC)) {
+                $permissions[$perm['module_id']] = $perm['rights'];
+            }
+        } catch (Throwable $e) {
+            $permissions = [];
         }
     }
 } catch (Throwable $e) {
     $dbAvailable = false;
 }
 
-if (!$userData) {
+if ($dbAvailable && !$userData) {
+    respond(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
+}
+
+// Pokus 2: fallback na super-admina z app.json
+if (!$dbAvailable && !$userData) {
     $sa = $appDefinition['superAdmin'];
     if ($username === ($sa['username'] ?? 'admin') && $password === ($sa['password'] ?? 'admin')) {
         $userData = [
@@ -93,17 +114,13 @@ if (!$userData) {
             'username' => $sa['username'] ?? 'admin',
             'role' => 'super-admin',
         ];
-        $enabledModules = !empty($appDefinition['defaultEnabledModules']) && is_array($appDefinition['defaultEnabledModules'])
-            ? $appDefinition['defaultEnabledModules']
-            : listAvailableModules();
-        $permissions = ['*'];
+        $enabledModules = listAvailableModules();
+        $permissions = ['*' => 'full'];
     }
 }
 
 if (!$userData) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Neplatné přihlašovací údaje.']);
-    exit;
+    respond(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
 }
 
 if (!in_array('config', $enabledModules, true)) {
@@ -114,7 +131,7 @@ $_SESSION['user_id'] = $userData['id'];
 $_SESSION['username'] = $userData['username'];
 $_SESSION['role'] = $userData['role'];
 
-echo json_encode([
+respond([
     'success' => true,
     'user' => [
         'id' => $userData['id'],
@@ -122,6 +139,7 @@ echo json_encode([
         'role' => $userData['role'],
         'permissions' => $permissions,
     ],
-    'enabledModules' => $enabledModules,
+    'enabledModules' => array_values(array_unique($enabledModules)),
+    'permissions' => $permissions,
     'dbAvailable' => $dbAvailable,
-], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+]);
