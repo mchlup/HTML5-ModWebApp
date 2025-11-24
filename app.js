@@ -3,16 +3,17 @@ import { getAllModules, getModule, clearModules } from "./core/moduleRegistry.js
 import {
   loadAppDefinition,
   ensureRuntimeConfig,
-  setRuntimeConfig,
+  getRuntimeConfig,
 } from "./core/configManager.js";
 import { initTheme, toggleTheme, getTheme } from "./core/themeManager.js";
 import { getLanguage, setLanguage } from "./core/languageManager.js";
 import { on as onEvent } from "./core/eventBus.js";
 import { STORAGE_KEYS } from "./core/constants.js";
 import { showToast } from "./core/uiService.js";
+import { login, loadCurrentUser } from "./core/authService.js";
 
 const root = document.getElementById("app-root");
-let runtimeConfig = { enabledModules: [], moduleConfig: {}, users: [], permissions: {} };
+let runtimeConfig = getRuntimeConfig();
 let modulesLoaded = false;
 let currentUser = null;
 let isSidebarCollapsed = false;
@@ -248,21 +249,9 @@ function renderLogin() {
     e.preventDefault();
     error.style.display = "none";
     try {
-      const response = await fetch("./config/login.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ username: inputUser.value.trim(), password: inputPass.value }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data?.message || "Neplatné přihlašovací údaje");
-      currentUser = data.user || { username: inputUser.value.trim() };
-      runtimeConfig = setRuntimeConfig({
-        enabledModules: data.enabledModules || [],
-        moduleConfig: {},
-        users: [],
-        permissions: data.permissions || {},
-      });
+      const result = await login(inputUser.value, inputPass.value);
+      currentUser = result?.user || { username: inputUser.value.trim() };
+      runtimeConfig = getRuntimeConfig();
       await bootstrap();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Nepodařilo se přihlásit.";
@@ -296,26 +285,6 @@ async function bootstrap() {
   }
 }
 
-async function tryRestoreSession() {
-  try {
-    const response = await fetch("./config/session.php", { credentials: "same-origin" });
-    const data = await response.json();
-    if (!response.ok || !data.success) return false;
-    currentUser = data.user;
-    runtimeConfig = setRuntimeConfig({
-      enabledModules: data.enabledModules || [],
-      moduleConfig: {},
-      users: [],
-      permissions: data.user?.permissions || {},
-    });
-    return true;
-  } catch (err) {
-    console.warn("Kontrola session selhala", err);
-    showToast("Nepodařilo se ověřit přihlášení.", { type: "error" });
-    return false;
-  }
-}
-
 window.addEventListener("hashchange", () => {
   if (modulesLoaded) renderShell();
 });
@@ -326,12 +295,19 @@ onEvent("language:changed", () => {
 
 (async function start() {
   initTheme();
-  const sessionOk = await tryRestoreSession();
-  if (sessionOk) {
-    await bootstrap();
-  } else {
-    renderLogin();
+  try {
+    const sessionData = await loadCurrentUser();
+    if (sessionData && sessionData.user) {
+      currentUser = sessionData.user;
+      runtimeConfig = getRuntimeConfig();
+      await bootstrap();
+      return;
+    }
+  } catch (err) {
+    console.warn("Obnovení session selhalo", err);
+    showToast("Nepodařilo se ověřit přihlášení.", { type: "error" });
   }
+  renderLogin();
 })();
 
 window.AppCore = {

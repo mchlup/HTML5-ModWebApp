@@ -1,5 +1,5 @@
 import { registerModule } from "../../core/moduleRegistry.js";
-import { ensureRuntimeConfig, saveEnabledModules, setRuntimeConfig } from "../../core/configManager.js";
+import { ensureRuntimeConfig, saveRuntimeConfig, setRuntimeConfig } from "../../core/configManager.js";
 import { getAllModules } from "../../core/moduleRegistry.js";
 import { setLanguage, getLanguage } from "../../core/languageManager.js";
 import { toggleTheme, getTheme } from "../../core/themeManager.js";
@@ -45,7 +45,7 @@ function renderModulesTab(container, lang, appConfig) {
       }
       const next = Array.from(enabledSet);
       setRuntimeConfig({ ...appConfig, enabledModules: next });
-      const ok = await saveEnabledModules(next);
+      const ok = await saveRuntimeConfig({ enabledModules: next });
       if (!ok) {
         showToast(lang === "en" ? "Saving failed" : "Uložení selhalo", { type: "error" });
       }

@@ -1,22 +1,49 @@
 import { setRuntimeConfig } from "./configManager.js";
+import { showToast } from "./uiService.js";
 
-export async function loadCurrentUser() {
+export async function login(username, password) {
   try {
-    const res = await fetch("./config/session.php", { credentials: "same-origin" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    if (!data.success) return null;
+    const response = await fetch("./config/login.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ username: username?.trim(), password }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data?.message || "Neplatné přihlašovací údaje");
+    }
     setRuntimeConfig({
       enabledModules: data.enabledModules || [],
       moduleConfig: {},
       users: [],
-      permissions: data.user?.permissions || {},
+      permissions: data.permissions || data.user?.permissions || {},
     });
-    return data.user;
+    return { user: data.user, enabledModules: data.enabledModules, permissions: data.permissions };
+  } catch (err) {
+    console.error("Přihlášení selhalo", err);
+    showToast(err instanceof Error ? err.message : "Nepodařilo se přihlásit.", { type: "error" });
+    throw err;
+  }
+}
+
+export async function loadCurrentUser() {
+  try {
+    const res = await fetch("./config/session.php", { credentials: "same-origin" });
+    const data = await res.json();
+    if (!res.ok || !data.success) return null;
+    setRuntimeConfig({
+      enabledModules: data.enabledModules || [],
+      moduleConfig: {},
+      users: [],
+      permissions: data.permissions || data.user?.permissions || {},
+    });
+    return { user: data.user, enabledModules: data.enabledModules, permissions: data.permissions };
   } catch (err) {
     console.warn("Chyba při ověřování session:", err);
+    showToast("Nepodařilo se ověřit přihlášení.", { type: "error" });
     return null;
   }
 }
 
-export default { loadCurrentUser };
+export default { loadCurrentUser, login };

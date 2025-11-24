@@ -29,7 +29,7 @@ function normalizeRuntimeConfig(cfg) {
   };
 }
 
-function syncRuntimeCache(cfg) {
+function persistRuntimeConfig(cfg) {
   runtimeConfig = normalizeRuntimeConfig(cfg || {});
   setStore(STORAGE_KEYS.APP_CONFIG, runtimeConfig);
   return runtimeConfig;
@@ -37,15 +37,15 @@ function syncRuntimeCache(cfg) {
 
 export async function loadAppDefinition() {
   if (appDefinition) return appDefinition;
-  const cached = getStore(STORAGE_KEYS.APP_CONFIG);
-  if (cached && cached.__appDefinition) {
-    appDefinition = cached.__appDefinition;
+  const cached = getStore(STORAGE_KEYS.APP_DEFINITION);
+  if (cached) {
+    appDefinition = cached;
     return appDefinition;
   }
   try {
     const def = await fetchJson(APP_CONFIG_URL, { headers: { Accept: "application/json" } });
     appDefinition = def || {};
-    setStore(STORAGE_KEYS.APP_CONFIG, { ...getStore(STORAGE_KEYS.APP_CONFIG), __appDefinition: appDefinition });
+    setStore(STORAGE_KEYS.APP_DEFINITION, appDefinition);
     return appDefinition;
   } catch (err) {
     console.error("Nepodařilo se načíst app.json", err);
@@ -56,7 +56,9 @@ export async function loadAppDefinition() {
 }
 
 export function getRuntimeConfig() {
-  if (runtimeConfig && Array.isArray(runtimeConfig.enabledModules)) return runtimeConfig;
+  if (runtimeConfig && Array.isArray(runtimeConfig.enabledModules) && runtimeConfig.enabledModules.length) {
+    return runtimeConfig;
+  }
   const cached = getStore(STORAGE_KEYS.APP_CONFIG);
   if (cached) {
     runtimeConfig = normalizeRuntimeConfig(cached);
@@ -65,7 +67,34 @@ export function getRuntimeConfig() {
 }
 
 export function setRuntimeConfig(cfg) {
-  return syncRuntimeCache(cfg);
+  return persistRuntimeConfig(cfg);
+}
+
+export async function loadRuntimeConfig(options = {}) {
+  if (!options.force && runtimeConfig.enabledModules && runtimeConfig.enabledModules.length) {
+    return runtimeConfig;
+  }
+  try {
+    const data = await fetchJson(MODULES_ENDPOINT, {
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+    });
+    if (data && data.success === false) {
+      throw new Error(data.message || "Načtení konfigurace selhalo");
+    }
+    const modules = Array.isArray(data?.modules) ? data.modules : [];
+    const enabledFromResponse = Array.isArray(data?.enabledModules) ? data.enabledModules : null;
+    const enabledModules =
+      enabledFromResponse && enabledFromResponse.length
+        ? enabledFromResponse
+        : modules.map((m) => m.id).filter(Boolean);
+    const permissions = data?.permissions && typeof data.permissions === "object" ? data.permissions : {};
+    return persistRuntimeConfig({ ...runtimeConfig, enabledModules, permissions });
+  } catch (err) {
+    console.error("Nepodařilo se načíst runtime konfiguraci", err);
+    showToast("Načtení konfigurace aplikace selhalo.", { type: "error" });
+    return runtimeConfig;
+  }
 }
 
 export async function ensureRuntimeConfig() {
@@ -75,13 +104,15 @@ export async function ensureRuntimeConfig() {
   const cached = getStore(STORAGE_KEYS.APP_CONFIG);
   if (cached) {
     runtimeConfig = normalizeRuntimeConfig(cached);
-    return runtimeConfig;
+    if (runtimeConfig.enabledModules.length) return runtimeConfig;
+  }
+  const loaded = await loadRuntimeConfig();
+  if (loaded && loaded.enabledModules.length) {
+    return loaded;
   }
   const definition = await loadAppDefinition();
   const defaults = Array.isArray(definition?.defaultEnabledModules) ? definition.defaultEnabledModules : [];
-  runtimeConfig = normalizeRuntimeConfig({ enabledModules: defaults });
-  syncRuntimeCache(runtimeConfig);
-  return runtimeConfig;
+  return persistRuntimeConfig({ enabledModules: defaults });
 }
 
 export async function loadModuleConfig(moduleName) {
@@ -107,20 +138,20 @@ export async function loadModuleConfig(moduleName) {
   }
 }
 
-export async function saveEnabledModules(enabledModules) {
-  const payload = Array.isArray(enabledModules) ? enabledModules : [];
+export async function saveRuntimeConfig(config) {
+  const payload = Array.isArray(config?.enabledModules) ? config.enabledModules : [];
   try {
     const res = await fetch(MODULES_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabledModules: payload }),
       credentials: "same-origin",
+      body: JSON.stringify({ enabledModules: payload }),
     });
     const data = await res.json();
     if (!res.ok || !data.success) {
       throw new Error(data?.message || "Uložení selhalo");
     }
-    syncRuntimeCache({ ...runtimeConfig, enabledModules: payload });
+    persistRuntimeConfig({ ...runtimeConfig, enabledModules: payload });
     showToast("Konfigurace modulů byla uložena.");
     return true;
   } catch (err) {
@@ -130,11 +161,22 @@ export async function saveEnabledModules(enabledModules) {
   }
 }
 
+export function clearRuntimeConfig() {
+  runtimeConfig = { enabledModules: [], moduleConfig: {}, users: [], permissions: {} };
+  setStore(STORAGE_KEYS.APP_CONFIG, runtimeConfig);
+}
+
+// Alias pro zpětnou kompatibilitu
+export const saveEnabledModules = saveRuntimeConfig;
+
 export default {
   loadAppDefinition,
   getRuntimeConfig,
   setRuntimeConfig,
+  loadRuntimeConfig,
   ensureRuntimeConfig,
   loadModuleConfig,
+  saveRuntimeConfig,
   saveEnabledModules,
+  clearRuntimeConfig,
 };
