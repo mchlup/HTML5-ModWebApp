@@ -8,27 +8,9 @@ const BALP_META = {
     en: "BALP v2",
   },
   navItems: [
-    {
-      id: "suroviny",
-      labels: {
-        cs: "Suroviny",
-        en: "Raw materials",
-      },
-    },
-    {
-      id: "polotovary",
-      labels: {
-        cs: "Polotovary",
-        en: "Intermediates",
-      },
-    },
-    {
-      id: "naterove-hmoty",
-      labels: {
-        cs: "Nátěrové hmoty",
-        en: "Coatings",
-      },
-    },
+    { id: "suroviny", labels: { cs: "Suroviny", en: "Raw materials" } },
+    { id: "polotovary", labels: { cs: "Polotovary", en: "Intermediates" } },
+    { id: "naterove-hmoty", labels: { cs: "Nátěrové hmoty", en: "Coatings" } },
   ],
 };
 
@@ -39,16 +21,30 @@ function renderSuroviny(container, lang) {
 
   const table = document.createElement("table");
   table.className = "table";
-  table.innerHTML =
-    lang === "en"
-      ? "<thead><tr><th>ID</th><th>Name</th><th>Supplier</th></tr></thead>"
-      : "<thead><tr><th>ID</th><th>Název</th><th>Dodavatel</th></tr></thead>";
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["ID", lang === "en" ? "Name" : "Název", lang === "en" ? "Supplier" : "Dodavatel"].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  head.appendChild(headRow);
+  table.appendChild(head);
 
   const tbody = document.createElement("tbody");
-  tbody.innerHTML = `
-    <tr><td>1</td><td>Pryskyřice A</td><td>Dodavatel X</td></tr>
-    <tr><td>2</td><td>Rozpouštědlo B</td><td>Dodavatel Y</td></tr>
-  `;
+  const rows = [
+    ["1", "Pryskyřice A", "Dodavatel X"],
+    ["2", "Rozpouštědlo B", "Dodavatel Y"],
+  ];
+  rows.forEach((cells) => {
+    const tr = document.createElement("tr");
+    cells.forEach((c) => {
+      const td = document.createElement("td");
+      td.textContent = c;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
   table.appendChild(tbody);
 
   container.appendChild(table);
@@ -82,10 +78,9 @@ function renderNateroveHmoty(container, lang) {
   container.appendChild(p);
 }
 
-function renderBalp(container, ctx) {
+function render(container, ctx) {
   const lang = (ctx && ctx.language) || "cs";
   const subId = (ctx && ctx.currentSubId) || "suroviny";
-
   const info = document.createElement("p");
   info.className = "muted";
   info.textContent =
@@ -105,9 +100,14 @@ function renderBalp(container, ctx) {
   }
 }
 
-registerModule({
-  id: BALP_META.id,
+export default {
+  register({ config, translations } = {}) {
+    registerModule("balp", {
+      id: "balp",
+      meta: { ...BALP_META, translations, config },
+      render,
+    });
+  },
   meta: BALP_META,
-  render: renderBalp,
-});
-
+  render,
+};
