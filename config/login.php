@@ -14,14 +14,56 @@ if ($username === '' || $password === '') {
 
 require_once __DIR__ . '/db_connect.php';
 
-try {
-    $pdo = getDbConnection();
-} catch (Exception $e) {
-    $pdo = null;
+$appConfigPath = __DIR__ . '/app.json';
+
+function loadAppDefinition(string $path): array
+{
+    if (!file_exists($path)) {
+        return [
+            'superAdmin' => ['username' => 'admin', 'password' => 'admin'],
+            'defaultEnabledModules' => [],
+        ];
+    }
+    $json = json_decode(file_get_contents($path), true);
+    if (!is_array($json)) {
+        return [
+            'superAdmin' => ['username' => 'admin', 'password' => 'admin'],
+            'defaultEnabledModules' => [],
+        ];
+    }
+    if (empty($json['superAdmin'])) {
+        $json['superAdmin'] = ['username' => 'admin', 'password' => 'admin'];
+    }
+    return $json;
 }
 
+function listAvailableModules(): array
+{
+    $modules = [];
+    $dir = __DIR__ . '/../modules';
+    if (!is_dir($dir)) {
+        return $modules;
+    }
+    foreach (scandir($dir) as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        if (is_dir($dir . '/' . $name) && file_exists($dir . '/' . $name . '/index.js')) {
+            $modules[] = $name;
+        }
+    }
+    return $modules;
+}
+
+$appDefinition = loadAppDefinition($appConfigPath);
 $userData = null;
-if ($pdo) {
+$permissions = [];
+$enabledModules = [];
+$dbAvailable = false;
+
+try {
+    $pdo = getDbConnection();
+    $dbAvailable = true;
     $stmt = $pdo->prepare('SELECT id, username, password, role FROM app_users WHERE username = ?');
     $stmt->execute([$username]);
     $row = $stmt->fetch();
@@ -31,84 +73,48 @@ if ($pdo) {
             'username' => $row['username'],
             'role' => $row['role'],
         ];
+        $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
+        $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0) ?: [];
+        $permStmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
+        $permStmt->execute([$userData['id']]);
+        while ($perm = $permStmt->fetch(PDO::FETCH_ASSOC)) {
+            $permissions[$perm['module_id']] = $perm['rights'];
+        }
     }
+} catch (Throwable $e) {
+    $dbAvailable = false;
 }
 
 if (!$userData) {
-    $appConfigPath = __DIR__ . '/app.json';
-    $superAdmin = ['username' => 'admin', 'password' => 'admin'];
-    if (file_exists($appConfigPath)) {
-        $json = json_decode(file_get_contents($appConfigPath), true);
-        if (isset($json['superAdmin'])) {
-            $sa = $json['superAdmin'];
-            if (isset($sa['username'])) {
-                $superAdmin['username'] = $sa['username'];
-            }
-            if (isset($sa['password'])) {
-                $superAdmin['password'] = $sa['password'];
-            }
-        }
-    }
-    if ($username === $superAdmin['username'] && $password === $superAdmin['password']) {
+    $sa = $appDefinition['superAdmin'];
+    if ($username === ($sa['username'] ?? 'admin') && $password === ($sa['password'] ?? 'admin')) {
         $userData = [
-            'id' => null,
-            'username' => $superAdmin['username'],
+            'id' => 0,
+            'username' => $sa['username'] ?? 'admin',
             'role' => 'super-admin',
         ];
+        $enabledModules = !empty($appDefinition['defaultEnabledModules']) && is_array($appDefinition['defaultEnabledModules'])
+            ? $appDefinition['defaultEnabledModules']
+            : listAvailableModules();
+        $permissions = ['*'];
     }
 }
 
 if (!$userData) {
+    http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Neplatné přihlašovací údaje.']);
     exit;
-}
-
-$_SESSION['user_id'] = $userData['id'];
-$_SESSION['username'] = $userData['username'];
-$_SESSION['role'] = $userData['role'];
-
-$enabledModules = [];
-if ($pdo) {
-    try {
-        $res = $pdo->query('SELECT id FROM app_modules WHERE enabled = 1');
-        $enabledModules = $res->fetchAll(PDO::FETCH_COLUMN, 0);
-    } catch (Exception $e) {
-        $enabledModules = [];
-    }
-} else {
-    $appConfigPath = __DIR__ . '/app.json';
-    if (file_exists($appConfigPath)) {
-        $json = json_decode(file_get_contents($appConfigPath), true);
-        if (!empty($json['defaultEnabledModules']) && is_array($json['defaultEnabledModules'])) {
-            $enabledModules = $json['defaultEnabledModules'];
-        }
-    }
-    if (empty($enabledModules) && is_dir(__DIR__ . '/../modules')) {
-        foreach (scandir(__DIR__ . '/../modules') as $name) {
-            if ($name === '.' || $name === '..') {
-                continue;
-            }
-            if (is_dir(__DIR__ . '/../modules/' . $name)) {
-                $enabledModules[] = $name;
-            }
-        }
-    }
 }
 
 if (!in_array('config', $enabledModules, true)) {
     $enabledModules[] = 'config';
 }
 
-$permissions = [];
-if ($pdo && $userData['id'] !== null) {
-    $stmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
-    $stmt->execute([$userData['id']]);
-    while ($perm = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $permissions[$perm['module_id']] = $perm['rights'];
-    }
-}
+$_SESSION['user_id'] = $userData['id'];
+$_SESSION['username'] = $userData['username'];
+$_SESSION['role'] = $userData['role'];
 
-$response = [
+echo json_encode([
     'success' => true,
     'user' => [
         'id' => $userData['id'],
@@ -117,6 +123,5 @@ $response = [
         'permissions' => $permissions,
     ],
     'enabledModules' => $enabledModules,
-];
-
-echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    'dbAvailable' => $dbAvailable,
+], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

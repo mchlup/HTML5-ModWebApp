@@ -1,7 +1,6 @@
 import { emit } from "./eventBus.js";
 import { get, set } from "./storageManager.js";
-
-const LANG_KEY = "app_language_v2";
+import { STORAGE_KEYS } from "./constants.js";
 
 async function fetchTranslations(moduleName, langCode) {
   try {
@@ -13,13 +12,13 @@ async function fetchTranslations(moduleName, langCode) {
 }
 
 export function getLanguage() {
-  const stored = get(LANG_KEY, { raw: true });
+  const stored = get(STORAGE_KEYS.LANGUAGE, { raw: true });
   return stored || "cs";
 }
 
 export function setLanguage(langCode) {
   const code = langCode || "cs";
-  set(LANG_KEY, code, { raw: true });
+  set(STORAGE_KEYS.LANGUAGE, code, { raw: true });
   emit("language:changed", code);
 }
 

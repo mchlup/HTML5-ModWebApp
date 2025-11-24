@@ -1,8 +1,9 @@
 import { registerModule } from "../../core/moduleRegistry.js";
-import { loadAppConfig, saveAppConfig } from "../../core/configManager.js";
+import { ensureRuntimeConfig, saveEnabledModules, setRuntimeConfig } from "../../core/configManager.js";
 import { getAllModules } from "../../core/moduleRegistry.js";
 import { setLanguage, getLanguage } from "../../core/languageManager.js";
 import { toggleTheme, getTheme } from "../../core/themeManager.js";
+import { showToast } from "../../core/uiService.js";
 
 const CONFIG_META = {
   id: "config",
@@ -36,14 +37,18 @@ function renderModulesTab(container, lang, appConfig) {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = enabledSet.size ? enabledSet.has(mod.id) : true;
-    checkbox.addEventListener("change", () => {
+    checkbox.addEventListener("change", async () => {
       if (checkbox.checked) {
         enabledSet.add(mod.id);
       } else {
         enabledSet.delete(mod.id);
       }
-      appConfig.enabledModules = Array.from(enabledSet);
-      saveAppConfig(appConfig);
+      const next = Array.from(enabledSet);
+      setRuntimeConfig({ ...appConfig, enabledModules: next });
+      const ok = await saveEnabledModules(next);
+      if (!ok) {
+        showToast(lang === "en" ? "Saving failed" : "Uložení selhalo", { type: "error" });
+      }
     });
     label.appendChild(checkbox);
     const span = document.createElement("span");
@@ -108,7 +113,7 @@ function renderAppearanceTab(container, lang) {
 async function render(container, ctx) {
   const lang = (ctx && ctx.language) || getLanguage();
   const tab = (ctx && ctx.currentSubId) || "modules";
-  const cfg = await loadAppConfig();
+  const cfg = await ensureRuntimeConfig();
 
   const tabs = document.createElement("div");
   tabs.className = "tabs";

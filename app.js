@@ -1,13 +1,18 @@
 import { loadAllModules } from "./core/moduleLoader.js";
-import { getAllModules, getModule } from "./core/moduleRegistry.js";
-import { loadAppConfig } from "./core/configManager.js";
+import { getAllModules, getModule, clearModules } from "./core/moduleRegistry.js";
+import {
+  loadAppDefinition,
+  ensureRuntimeConfig,
+  setRuntimeConfig,
+} from "./core/configManager.js";
 import { initTheme, toggleTheme, getTheme } from "./core/themeManager.js";
 import { getLanguage, setLanguage } from "./core/languageManager.js";
 import { on as onEvent } from "./core/eventBus.js";
+import { STORAGE_KEYS } from "./core/constants.js";
+import { showToast } from "./core/uiService.js";
 
 const root = document.getElementById("app-root");
-const SIDEBAR_STATE_KEY = "app_sidebar_state_v2";
-let appConfig = { enabledModules: [], moduleConfig: {}, users: [] };
+let runtimeConfig = { enabledModules: [], moduleConfig: {}, users: [], permissions: {} };
 let modulesLoaded = false;
 let currentUser = null;
 let isSidebarCollapsed = false;
@@ -20,7 +25,7 @@ function getRoute() {
 
 function persistSidebarState(collapsed) {
   try {
-    localStorage.setItem(SIDEBAR_STATE_KEY, collapsed ? "1" : "0");
+    localStorage.setItem(STORAGE_KEYS.SIDEBAR, collapsed ? "1" : "0");
   } catch (err) {
     console.warn("Sidebar state save failed", err);
   }
@@ -28,7 +33,7 @@ function persistSidebarState(collapsed) {
 
 function loadSidebarState() {
   try {
-    const v = localStorage.getItem(SIDEBAR_STATE_KEY);
+    const v = localStorage.getItem(STORAGE_KEYS.SIDEBAR);
     return v === "1";
   } catch (err) {
     return false;
@@ -50,7 +55,7 @@ function renderModule(container, moduleId, subId) {
     mod.render(container, {
       language: getLanguage(),
       currentSubId: subId,
-      config: appConfig.moduleConfig[moduleId] || {},
+      config: runtimeConfig.moduleConfig?.[moduleId] || {},
       moduleRegistry: getAllModules().reduce((acc, m) => {
         acc[m.id] = m;
         return acc;
@@ -108,8 +113,8 @@ function renderShell() {
 
   const nav = document.createElement("nav");
   nav.className = "app-nav";
-  let enabled = appConfig.enabledModules && appConfig.enabledModules.length
-    ? appConfig.enabledModules.filter((id) => getModule(id))
+  let enabled = runtimeConfig.enabledModules && runtimeConfig.enabledModules.length
+    ? runtimeConfig.enabledModules.filter((id) => getModule(id))
     : registry.map((m) => m.id);
   if (!enabled.length) {
     enabled = registry.map((m) => m.id);
@@ -215,7 +220,7 @@ function renderLogin() {
   title.textContent = "Flexo";
   const subtitle = document.createElement("p");
   subtitle.className = "login-subtitle";
-  subtitle.textContent = "Přihlaste se jako super-admin.";
+  subtitle.textContent = "Přihlaste se jako uživatel nebo super-admin.";
   const form = document.createElement("form");
   form.className = "login-form";
   const inputUser = document.createElement("input");
@@ -241,20 +246,29 @@ function renderLogin() {
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    error.style.display = "none";
     try {
       const response = await fetch("./config/login.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ username: inputUser.value.trim(), password: inputPass.value }),
       });
-      if (!response.ok) throw new Error("HTTP " + response.status);
       const data = await response.json();
-      if (!data.success) throw new Error("Neplatné přihlašovací údaje");
+      if (!response.ok || !data.success) throw new Error(data?.message || "Neplatné přihlašovací údaje");
       currentUser = data.user || { username: inputUser.value.trim() };
+      runtimeConfig = setRuntimeConfig({
+        enabledModules: data.enabledModules || [],
+        moduleConfig: {},
+        users: [],
+        permissions: data.permissions || {},
+      });
       await bootstrap();
     } catch (err) {
-      error.textContent = err instanceof Error ? err.message : "Nepodařilo se přihlásit.";
+      const msg = err instanceof Error ? err.message : "Nepodařilo se přihlásit.";
+      error.textContent = msg;
       error.style.display = "block";
+      showToast(msg, { type: "error" });
     }
   });
 
@@ -267,17 +281,39 @@ function renderLogin() {
 }
 
 async function bootstrap() {
-  initTheme();
-  isSidebarCollapsed = loadSidebarState();
-  appConfig = await loadAppConfig();
-  if (!appConfig || typeof appConfig !== "object") {
-    appConfig = {};
+  try {
+    initTheme();
+    isSidebarCollapsed = loadSidebarState();
+    await loadAppDefinition();
+    runtimeConfig = await ensureRuntimeConfig();
+    clearModules();
+    await loadAllModules();
+    modulesLoaded = true;
+    renderShell();
+  } catch (err) {
+    console.error("Bootstrap selhal", err);
+    showToast("Inicializace aplikace selhala.", { type: "error" });
   }
-  appConfig.moduleConfig = appConfig.moduleConfig || {};
-  appConfig.enabledModules = appConfig.enabledModules || [];
-  await loadAllModules();
-  modulesLoaded = true;
-  renderShell();
+}
+
+async function tryRestoreSession() {
+  try {
+    const response = await fetch("./config/session.php", { credentials: "same-origin" });
+    const data = await response.json();
+    if (!response.ok || !data.success) return false;
+    currentUser = data.user;
+    runtimeConfig = setRuntimeConfig({
+      enabledModules: data.enabledModules || [],
+      moduleConfig: {},
+      users: [],
+      permissions: data.user?.permissions || {},
+    });
+    return true;
+  } catch (err) {
+    console.warn("Kontrola session selhala", err);
+    showToast("Nepodařilo se ověřit přihlášení.", { type: "error" });
+    return false;
+  }
 }
 
 window.addEventListener("hashchange", () => {
@@ -288,11 +324,19 @@ onEvent("language:changed", () => {
   if (modulesLoaded) renderShell();
 });
 
+(async function start() {
+  initTheme();
+  const sessionOk = await tryRestoreSession();
+  if (sessionOk) {
+    await bootstrap();
+  } else {
+    renderLogin();
+  }
+})();
+
 window.AppCore = {
   getLanguage,
   setLanguage,
   toggleTheme,
   getTheme,
 };
-
-renderLogin();

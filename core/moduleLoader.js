@@ -1,17 +1,20 @@
 import { registerModule } from "./moduleRegistry.js";
 import { loadModuleConfig } from "./configManager.js";
 import { loadModuleTranslations } from "./languageManager.js";
+import { showToast } from "./uiService.js";
 
 async function fetchManifest() {
   try {
     const res = await fetch("./config/modules.php", {
       headers: { Accept: "application/json" },
+      credentials: "same-origin",
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     return Array.isArray(data.modules) ? data.modules : [];
   } catch (err) {
     console.error("Nepodařilo se načíst manifest modulů", err);
+    showToast("Nepodařilo se načíst seznam modulů.", { type: "error" });
     return [];
   }
 }
@@ -38,6 +41,7 @@ async function loadModule(entry) {
     return { id, config, translations };
   } catch (err) {
     console.error("Chyba při načítání modulu", id, err);
+    showToast(`Modul ${id} se nepodařilo načíst.`, { type: "error" });
     return null;
   }
 }

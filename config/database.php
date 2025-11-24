@@ -1,10 +1,20 @@
 <?php
+session_start();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 
 $input = json_decode(file_get_contents('php://input'), true);
 $action = isset($input['action']) ? $input['action'] : null;
 $config = isset($input['config']) && is_array($input['config']) ? $input['config'] : [];
+
+$dbConfigPath = __DIR__ . '/db_config.json';
+$configExists = file_exists($dbConfigPath);
+$isSuperAdmin = isset($_SESSION['role']) && $_SESSION['role'] === 'super-admin';
+
+if ($configExists && !$isSuperAdmin) {
+    http_response_code(403);
+    respond(['success' => false, 'message' => 'Nedostatečná oprávnění.']);
+}
 
 try {
     if (!$action) {
@@ -81,9 +91,10 @@ try {
         throw new InvalidArgumentException('Neznámá akce.');
     }
 } catch (Throwable $e) {
+    $msg = $configExists ? 'Operace selhala.' : $e->getMessage();
     respond([
         'success' => false,
-        'message' => $e->getMessage(),
+        'message' => $msg,
     ]);
 }
 
