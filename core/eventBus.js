@@ -1,25 +1,35 @@
-const listeners = {};
+const listeners = new Map();
 
-export function on(eventName, handler) {
-  if (!listeners[eventName]) listeners[eventName] = new Set();
-  listeners[eventName].add(handler);
-  return () => off(eventName, handler);
-}
-
-export function off(eventName, handler) {
-  const set = listeners[eventName];
-  if (!set) return;
-  set.delete(handler);
-}
-
-export function emit(eventName, payload) {
-  const set = listeners[eventName];
-  if (!set) return;
-  for (const fn of Array.from(set)) {
-    try {
-      fn(payload);
-    } catch (err) {
-      console.warn("eventBus handler error", eventName, err);
-    }
+export function on(event, handler) {
+  if (!event || typeof handler !== "function") return;
+  if (!listeners.has(event)) {
+    listeners.set(event, new Set());
   }
+  listeners.get(event).add(handler);
 }
+
+export function off(event, handler) {
+  if (!event || !listeners.has(event)) return;
+  if (!handler) {
+    listeners.delete(event);
+    return;
+  }
+  listeners.get(event).delete(handler);
+}
+
+export function emit(event, payload) {
+  if (!event || !listeners.has(event)) return;
+  listeners.get(event).forEach((handler) => {
+    try {
+      handler(payload);
+    } catch (err) {
+      console.error("EventBus handler error for", event, err);
+    }
+  });
+}
+
+export default {
+  on,
+  off,
+  emit,
+};

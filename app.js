@@ -1,165 +1,235 @@
-import { getCurrentRoute, listenRouteChange, navigateTo, runRouteGuards } from "./core/router.js";
-import { loadAppDefinition, loadAppConfig, saveAppConfig, setAppConfigCache } from "./core/configService.js";
-import { loadCurrentUser, clearCurrentUser } from "./core/authService.js";
-import { getModuleRegistry, initModules } from "./core/moduleRegistry.js";
-import { getAppVersion, runMigrations } from "./core/versionService.js";
-import * as storageService from "./core/storageService.js";
-import * as uiService from "./core/uiService.js";
-import * as eventBus from "./core/eventBus.js";
-import * as permissionService from "./core/permissionService.js";
-import { registerService } from "./core/serviceRegistry.js";
-import { setLanguage, getLanguage } from "./core/i18n.js";
+import { loadAllModules } from "./core/moduleLoader.js";
+import { getAllModules, getModule } from "./core/moduleRegistry.js";
+import { loadAppConfig } from "./core/configManager.js";
+import { initTheme, toggleTheme, getTheme } from "./core/themeManager.js";
+import { getLanguage, setLanguage } from "./core/languageManager.js";
+import { on as onEvent } from "./core/eventBus.js";
 
 const root = document.getElementById("app-root");
-
-let currentLanguage = "cs";
-let MODULE_REGISTRY = {};
-
-function resolveLabel(meta, fallback) {
-  if (meta && meta.labels) {
-    return meta.labels[currentLanguage] || meta.labels["cs"] || fallback;
-  }
-  return fallback;
-}
-
-function resolveNavItemLabel(itemMeta, fallback) {
-  if (itemMeta && itemMeta.labels) {
-    return itemMeta.labels[currentLanguage] || itemMeta.labels["cs"] || fallback;
-  }
-  return fallback;
-}
-
-const THEME_STORAGE_KEY = "app_theme_v1";
-const SIDEBAR_STATE_KEY = "app_sidebar_state_v1";
-
-function applyTheme(theme) {
-  const t = theme === "dark" ? "dark" : "light";
-  document.body.classList.remove("theme-dark", "theme-light");
-  document.body.classList.add(t === "dark" ? "theme-dark" : "theme-light");
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, t);
-  } catch (err) {
-    console.warn("Theme: nelze uložit do localStorage", err);
-  }
-}
-
-function initTheme() {
-  let t = "dark";
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "dark" || stored === "light") {
-      t = stored;
-    }
-  } catch (err) {
-    console.warn("Theme: nelze číst z localStorage", err);
-  }
-  applyTheme(t);
-}
-
-// global state
-let appDefinition = null;
-let appConfigForCore = {
-  enabledModules: null,
-  moduleConfig: {},
-  users: [],
-};
-let activeModules = [];
+const SIDEBAR_STATE_KEY = "app_sidebar_state_v2";
+let appConfig = { enabledModules: [], moduleConfig: {}, users: [] };
+let modulesLoaded = false;
 let currentUser = null;
 let isSidebarCollapsed = false;
 
-function readStoredSidebarState() {
-  if (typeof localStorage === "undefined") {
-    return false;
-  }
-  try {
-    const stored = localStorage.getItem(SIDEBAR_STATE_KEY);
-    return stored === "1";
-  } catch (err) {
-    console.warn("Sidebar: nelze načíst stav", err);
-    return false;
-  }
+function getRoute() {
+  const hash = window.location.hash.replace(/^#\//, "");
+  const [moduleId, subId] = hash.split("/");
+  return { moduleId: moduleId || "config", subId: subId || null };
 }
 
 function persistSidebarState(collapsed) {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
   try {
     localStorage.setItem(SIDEBAR_STATE_KEY, collapsed ? "1" : "0");
   } catch (err) {
-    console.warn("Sidebar: nelze uložit stav", err);
+    console.warn("Sidebar state save failed", err);
   }
 }
 
-function setSidebarCollapsed(nextState) {
-  isSidebarCollapsed = !!nextState;
-  persistSidebarState(isSidebarCollapsed);
-}
-
-async function loadModulesFromDirectory() {
-  let manifest = null;
+function loadSidebarState() {
   try {
-    const res = await fetch("./config/modules.php");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    manifest = await res.json();
+    const v = localStorage.getItem(SIDEBAR_STATE_KEY);
+    return v === "1";
   } catch (err) {
-    console.error("Nepodařilo se načíst config/modules.php:", err);
-    manifest = { modules: [] };
+    return false;
   }
+}
 
-  const list = Array.isArray(manifest.modules) ? manifest.modules : [];
-  if (!list.length) {
-    console.warn("Manifest modulů je prázdný.");
+function resolveLabel(meta, fallback) {
+  const lang = getLanguage();
+  if (meta && meta.labels) {
+    return meta.labels[lang] || meta.labels["cs"] || fallback;
   }
+  return fallback;
+}
 
-  for (const m of list) {
-    if (!m || !m.entry) continue;
-    try {
-      await import(m.entry);
-    } catch (err) {
-      console.error("Chyba při dynamickém importu modulu", m.entry, err);
+function renderModule(container, moduleId, subId) {
+  const mod = getModule(moduleId);
+  if (mod && typeof mod.render === "function") {
+    container.innerHTML = "";
+    mod.render(container, {
+      language: getLanguage(),
+      currentSubId: subId,
+      config: appConfig.moduleConfig[moduleId] || {},
+      moduleRegistry: getAllModules().reduce((acc, m) => {
+        acc[m.id] = m;
+        return acc;
+      }, {}),
+    });
+  } else {
+    container.textContent = "Modul nebyl nalezen.";
+  }
+}
+
+function renderShell() {
+  const { moduleId, subId } = getRoute();
+  const registry = getAllModules();
+  const container = document.createElement("div");
+  container.className = "app-shell";
+
+  const sidebar = document.createElement("aside");
+  sidebar.className = "app-sidebar";
+  if (isSidebarCollapsed) sidebar.classList.add("app-sidebar-collapsed");
+
+  const sidebarHeader = document.createElement("div");
+  sidebarHeader.className = "sidebar-header";
+  const logo = document.createElement("div");
+  logo.className = "app-logo-wrap";
+  const logoIcon = document.createElement("div");
+  logoIcon.className = "app-logo-icon";
+  logoIcon.innerHTML = '<i class="fa-solid fa-layer-group"></i>';
+  const logoText = document.createElement("div");
+  logoText.className = "app-logo-text";
+  logoText.textContent = "Flexo";
+  logo.appendChild(logoIcon);
+  logo.appendChild(logoText);
+  sidebarHeader.appendChild(logo);
+
+  const sidebarToggle = document.createElement("button");
+  sidebarToggle.type = "button";
+  sidebarToggle.className = "sidebar-toggle";
+  function updateToggleUi() {
+    if (isSidebarCollapsed) {
+      sidebarToggle.innerHTML = '<i class="fa-solid fa-angles-right" aria-hidden="true"></i>';
+      sidebar.classList.add("app-sidebar-collapsed");
+    } else {
+      sidebarToggle.innerHTML = '<i class="fa-solid fa-angles-left" aria-hidden="true"></i>';
+      sidebar.classList.remove("app-sidebar-collapsed");
     }
   }
+  sidebarToggle.addEventListener("click", () => {
+    isSidebarCollapsed = !isSidebarCollapsed;
+    persistSidebarState(isSidebarCollapsed);
+    updateToggleUi();
+  });
+  updateToggleUi();
+  sidebarHeader.appendChild(sidebarToggle);
+  sidebar.appendChild(sidebarHeader);
 
-  MODULE_REGISTRY = getModuleRegistry();
+  const nav = document.createElement("nav");
+  nav.className = "app-nav";
+  let enabled = appConfig.enabledModules && appConfig.enabledModules.length
+    ? appConfig.enabledModules.filter((id) => getModule(id))
+    : registry.map((m) => m.id);
+  if (!enabled.length) {
+    enabled = registry.map((m) => m.id);
+  }
+  enabled.forEach((id) => {
+    const entry = getModule(id);
+    if (!entry) return;
+    const item = document.createElement("div");
+    item.className = "nav-item";
+    if (id === moduleId) item.classList.add("active");
+    if (entry.meta && Array.isArray(entry.meta.navItems) && entry.meta.navItems.length) {
+      item.classList.add("has-submenu");
+    }
+    const link = document.createElement("a");
+    link.href = `#/${id}`;
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "nav-icon";
+    iconWrap.innerHTML = `<i class="${entry.meta?.iconClass || "fa-solid fa-circle"}"></i>`;
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "nav-label";
+    labelSpan.textContent = resolveLabel(entry.meta, entry.id || id);
+    link.appendChild(iconWrap);
+    link.appendChild(labelSpan);
+    if (entry.meta && Array.isArray(entry.meta.navItems) && entry.meta.navItems.length) {
+      const chevron = document.createElement("span");
+      chevron.className = "nav-chevron";
+      chevron.innerHTML = '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
+      link.appendChild(chevron);
+    }
+    item.appendChild(link);
+
+    if (entry.meta && Array.isArray(entry.meta.navItems) && entry.meta.navItems.length) {
+      const sub = document.createElement("div");
+      sub.className = "nav-submenu";
+      entry.meta.navItems.forEach((subItem) => {
+        const subDiv = document.createElement("div");
+        subDiv.className = "nav-subitem";
+        const subLink = document.createElement("a");
+        subLink.href = `#/${id}/${subItem.id}`;
+        subLink.textContent = resolveLabel(subItem, subItem.id);
+        if (id === moduleId && subItem.id === subId) subDiv.classList.add("active");
+        subDiv.appendChild(subLink);
+        sub.appendChild(subDiv);
+      });
+      item.appendChild(sub);
+    }
+
+    nav.appendChild(item);
+  });
+  sidebar.appendChild(nav);
+
+  const userPanel = document.createElement("div");
+  userPanel.className = "user-panel";
+  const userInfo = document.createElement("div");
+  userInfo.className = "user-info";
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.textContent = (currentUser?.username || "S")[0].toUpperCase();
+  const userName = document.createElement("div");
+  userName.className = "user-name";
+  userName.textContent = currentUser?.username || "super-admin";
+  userInfo.appendChild(avatar);
+  userInfo.appendChild(userName);
+  userPanel.appendChild(userInfo);
+
+  const themeToggle = document.createElement("button");
+  themeToggle.className = "theme-toggle";
+  themeToggle.type = "button";
+  function updateThemeUi() {
+    const theme = getTheme();
+    themeToggle.innerHTML = `<i class="fa-solid ${theme === "dark" ? "fa-moon" : "fa-sun"}"></i><span>${theme === "dark" ? "Světlý" : "Tmavý"}</span>`;
+  }
+  updateThemeUi();
+  themeToggle.addEventListener("click", () => {
+    toggleTheme();
+    updateThemeUi();
+  });
+  userPanel.appendChild(themeToggle);
+
+  sidebar.appendChild(userPanel);
+
+  const main = document.createElement("main");
+  main.className = "app-main";
+  const moduleContainer = document.createElement("div");
+  moduleContainer.className = "app-main-inner";
+  renderModule(moduleContainer, moduleId, subId);
+  main.appendChild(moduleContainer);
+
+  container.appendChild(sidebar);
+  container.appendChild(main);
+
+  root.innerHTML = "";
+  root.appendChild(container);
 }
 
 function renderLogin() {
   const wrapper = document.createElement("div");
   wrapper.className = "login-root";
-
   const card = document.createElement("div");
   card.className = "login-card";
-
   const title = document.createElement("h1");
   title.className = "login-title";
   title.textContent = "Flexo";
-  card.appendChild(title);
-
   const subtitle = document.createElement("p");
   subtitle.className = "login-subtitle";
-  subtitle.textContent =
-    "Přihlaste se jako super-admin.";
-  card.appendChild(subtitle);
-
+  subtitle.textContent = "Přihlaste se jako super-admin.";
   const form = document.createElement("form");
   form.className = "login-form";
-
   const inputUser = document.createElement("input");
   inputUser.placeholder = "Uživatelské jméno";
-  inputUser.value = "admin";
   inputUser.autocomplete = "username";
-
+  inputUser.value = "admin";
   const inputPass = document.createElement("input");
-  inputPass.placeholder = "Heslo";
   inputPass.type = "password";
-  inputPass.value = "admin";
+  inputPass.placeholder = "Heslo";
   inputPass.autocomplete = "current-password";
-
+  inputPass.value = "admin";
   const btn = document.createElement("button");
   btn.type = "submit";
   btn.textContent = "Přihlásit se";
-
   const error = document.createElement("div");
   error.className = "login-error";
   error.style.display = "none";
@@ -171,436 +241,58 @@ function renderLogin() {
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const username = inputUser.value.trim();
-    const password = inputPass.value;
     try {
       const response = await fetch("./config/login.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: inputUser.value.trim(), password: inputPass.value }),
       });
       if (!response.ok) throw new Error("HTTP " + response.status);
       const data = await response.json();
-      if (!data.success) {
-        error.textContent = "Neplatné přihlašovací údaje.";
-        error.style.display = "block";
-        return;
-      }
-      error.style.display = "none";
-      currentUser = data.user;
-      setAppConfigCache({
-        enabledModules: data.enabledModules || [],
-        moduleConfig: {},
-        users: [],
-      });
-      await loadModulesFromDirectory();
-      await initModules({
-        moduleRegistry: MODULE_REGISTRY,
-        appConfig: appConfigForCore,
-        currentUser,
-      });
-      await initAppAfterLogin();
+      if (!data.success) throw new Error("Neplatné přihlašovací údaje");
+      currentUser = data.user || { username: inputUser.value.trim() };
+      await bootstrap();
     } catch (err) {
-      console.error("Chyba přihlášení:", err);
-      error.textContent = "Nepodařilo se přihlásit. Zkuste to znovu.";
+      error.textContent = err instanceof Error ? err.message : "Nepodařilo se přihlásit.";
       error.style.display = "block";
     }
   });
 
+  card.appendChild(title);
+  card.appendChild(subtitle);
   card.appendChild(form);
   wrapper.appendChild(card);
-
   root.innerHTML = "";
   root.appendChild(wrapper);
 }
 
-function prepareConfiguration() {
-  const def = appDefinition || { modules: {}, defaultEnabledModules: null };
-  const cfg = loadAppConfig();
-
-  let enabled = cfg.enabledModules;
-  if (!Array.isArray(enabled) || !enabled.length) {
-    enabled = def.defaultEnabledModules || Object.keys(MODULE_REGISTRY);
-  }
-
-  enabled = enabled.filter((id) => !!MODULE_REGISTRY[id]);
-  if (!enabled.includes("config") && MODULE_REGISTRY["config"]) {
-    enabled.unshift("config");
-  }
-  if (!enabled.length) {
-    enabled = Object.keys(MODULE_REGISTRY);
-  }
-
-  const moduleCfgFromDef = def.modules || {};
-  const moduleCfgFromStorage = cfg.moduleConfig || {};
-  const moduleConfig = { ...moduleCfgFromDef, ...moduleCfgFromStorage };
-
-  const users = Array.isArray(cfg.users) ? cfg.users : [];
-
-  appConfigForCore = {
-    enabledModules: enabled,
-    moduleConfig,
-    users,
-  };
-  activeModules = [...enabled];
-
-  saveAppConfig(appConfigForCore);
-}
-
-function renderShell(currentModuleId, currentSubId) {
-  const moduleEntry = MODULE_REGISTRY[currentModuleId];
-  const current = moduleEntry ? moduleEntry : null;
-  const meta = current ? current.meta : null;
-
-  root.innerHTML = "";
-
-  const shell = document.createElement("div");
-  shell.className = "app-shell";
-
-  const sidebar = document.createElement("aside");
-  sidebar.className = "app-sidebar";
-  if (isSidebarCollapsed) {
-    sidebar.classList.add("app-sidebar-collapsed");
-  }
-
-  const logo = document.createElement("div");
-  logo.className = "app-logo-wrap";
-
-  const logoIcon = document.createElement("div");
-  logoIcon.className = "app-logo-icon";
-  logoIcon.innerHTML = '<i class="fa-solid fa-layer-group"></i>';
-
-  const logoText = document.createElement("div");
-  logoText.className = "app-logo-text";
-  logoText.textContent = "Flexo";
-
-  logo.appendChild(logoIcon);
-  logo.appendChild(logoText);
-
-  const sidebarHeader = document.createElement("div");
-  sidebarHeader.className = "sidebar-header";
-  sidebarHeader.appendChild(logo);
-
-  const sidebarToggle = document.createElement("button");
-  sidebarToggle.type = "button";
-  sidebarToggle.className = "sidebar-toggle";
-
-  function updateSidebarToggleUi() {
-    if (isSidebarCollapsed) {
-      sidebarToggle.innerHTML =
-        '<i class="fa-solid fa-angles-right" aria-hidden="true"></i>';
-      sidebarToggle.title = "Rozbalit navigaci";
-      sidebarToggle.setAttribute("aria-label", "Rozbalit navigaci");
-      sidebar.classList.add("app-sidebar-collapsed");
-    } else {
-      sidebarToggle.innerHTML =
-        '<i class="fa-solid fa-angles-left" aria-hidden="true"></i>';
-      sidebarToggle.title = "Sbalit navigaci";
-      sidebarToggle.setAttribute("aria-label", "Sbalit navigaci");
-      sidebar.classList.remove("app-sidebar-collapsed");
-    }
-  }
-
-  sidebarToggle.addEventListener("click", () => {
-    setSidebarCollapsed(!isSidebarCollapsed);
-    updateSidebarToggleUi();
-  });
-
-  updateSidebarToggleUi();
-  sidebarHeader.appendChild(sidebarToggle);
-  sidebar.appendChild(sidebarHeader);
-
-  const badge = document.createElement("div");
-  badge.className = "badge";
-  badge.innerHTML = `<i class="fa-regular fa-circle-dot"></i><span>statická verze · v${getAppVersion()}</span>`;
-  sidebar.appendChild(badge);
-
-  const nav = document.createElement("nav");
-  nav.className = "app-nav";
-
-  activeModules.forEach((id) => {
-    const entry = MODULE_REGISTRY[id];
-    if (!entry) return;
-    const mMeta = entry.meta || {};
-    const hasSubNav = Array.isArray(mMeta.navItems) && mMeta.navItems.length;
-    const item = document.createElement("div");
-    item.className = "nav-item";
-    if (id === currentModuleId) {
-      item.classList.add("active");
-    }
-    if (hasSubNav) {
-      item.classList.add("has-submenu");
-    }
-
-    const link = document.createElement("a");
-    link.href = `#/${id}`;
-
-    const iconWrap = document.createElement("span");
-    iconWrap.className = "nav-icon";
-    const iconClass = mMeta.iconClass || "fa-solid fa-circle";
-    iconWrap.innerHTML = `<i class="${iconClass}"></i>`;
-
-    const labelSpan = document.createElement("span");
-    labelSpan.className = "nav-label";
-    const moduleLabel = resolveLabel(mMeta, entry.id || id);
-    labelSpan.textContent = moduleLabel;
-
-    link.appendChild(iconWrap);
-    link.appendChild(labelSpan);
-    if (hasSubNav) {
-      const chevron = document.createElement("span");
-      chevron.className = "nav-chevron";
-      chevron.innerHTML = '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
-      link.appendChild(chevron);
-    }
-    item.appendChild(link);
-
-    if (hasSubNav) {
-      const subList = document.createElement("div");
-      subList.className = "nav-submenu";
-      mMeta.navItems.forEach((sub) => {
-        const subItem = document.createElement("div");
-        subItem.className = "nav-subitem";
-
-        const subLink = document.createElement("a");
-        const subLabel = resolveNavItemLabel(sub, sub.id);
-        const subId = sub.id || null;
-        const hrefSuffix = subId ? `/${subId}` : "";
-        subLink.href = `#/${id}${hrefSuffix}`;
-        subLink.textContent = subLabel;
-
-        if (id === currentModuleId && subId === currentSubId) {
-          subItem.classList.add("active");
-        }
-
-        subItem.appendChild(subLink);
-        subList.appendChild(subItem);
-      });
-      item.appendChild(subList);
-    }
-
-    nav.appendChild(item);
-  });
-
-  sidebar.appendChild(nav);
-
-  const userPanel = document.createElement("div");
-  userPanel.className = "user-panel";
-
-  const userInfo = document.createElement("div");
-  userInfo.className = "user-info";
-  const avatar = document.createElement("div");
-  avatar.className = "avatar";
-  const initials = (currentUser && currentUser.username && currentUser.username[0]) || "S";
-  avatar.textContent = initials.toUpperCase();
-  const userName = document.createElement("div");
-  userName.className = "user-name";
-  userName.textContent = currentUser ? currentUser.username : "super-admin";
-  userInfo.appendChild(avatar);
-  userInfo.appendChild(userName);
-  userPanel.appendChild(userInfo);
-
-  const userActions = document.createElement("div");
-  userActions.className = "user-actions";
-
-  const themeToggle = document.createElement("button");
-  themeToggle.type = "button";
-  themeToggle.className = "theme-toggle";
-  themeToggle.title = "Přepnout motiv";
-  themeToggle.setAttribute("aria-label", "Přepnout motiv");
-
-  function updateThemeToggleLabel() {
-    const isDark = document.body.classList.contains("theme-dark");
-    themeToggle.innerHTML = isDark
-      ? '<i class="fa-regular fa-sun"></i><span> Světlý režim</span>'
-      : '<i class="fa-regular fa-moon"></i><span> Tmavý režim</span>';
-  }
-
-  themeToggle.addEventListener("click", () => {
-    const isDark = document.body.classList.contains("theme-dark");
-    const next = isDark ? "light" : "dark";
-    applyTheme(next);
-    updateThemeToggleLabel();
-  });
-
-  updateThemeToggleLabel();
-  userActions.appendChild(themeToggle);
-
-  const logoutBtn = document.createElement("button");
-  logoutBtn.type = "button";
-  logoutBtn.className = "logout-btn";
-  logoutBtn.innerHTML =
-    '<i class="fa-solid fa-arrow-right-from-bracket"></i><span> Odhlásit</span>';
-  logoutBtn.title = "Odhlásit se";
-  logoutBtn.setAttribute("aria-label", "Odhlásit se");
-  logoutBtn.addEventListener("click", () => {
-    fetch("./config/logout.php", { method: "GET" })
-      .catch(() => {})
-      .finally(() => {
-        clearCurrentUser();
-        window.location.reload();
-      });
-  });
-  userActions.appendChild(logoutBtn);
-
-  userPanel.appendChild(userActions);
-  sidebar.appendChild(userPanel);
-
-  const main = document.createElement("main");
-  main.className = "app-main";
-
-  const header = document.createElement("div");
-  header.className = "app-header";
-
-  const title = document.createElement("h2");
-  let baseTitle = current
-    ? resolveLabel(meta, currentModuleId)
-    : "Neznámý modul";
-
-  if (meta && Array.isArray(meta.navItems) && currentSubId) {
-    const sub = meta.navItems.find((s) => s.id === currentSubId);
-    if (sub) {
-      const subLabel = resolveNavItemLabel(sub, "");
-      if (subLabel) {
-        baseTitle = baseTitle + " – " + subLabel;
-      }
-    }
-  }
-  title.textContent = baseTitle;
-  header.appendChild(title);
-
-  const info = document.createElement("div");
-  info.className = "muted";
-  info.textContent =
-    "Konfigurace aplikace, uživatelů i modulů se ukládá do databáze.";
-  header.appendChild(info);
-
-  main.appendChild(header);
-
-  const contentCard = document.createElement("div");
-  contentCard.className = "card";
-
-  const renderer =
-    current && typeof current.render === "function" ? current.render : null;
-
-  if (renderer) {
-    renderer(contentCard, {
-      activeModules: [...activeModules],
-      moduleRegistry: MODULE_REGISTRY,
-      appConfig: appConfigForCore,
-      currentUser,
-      currentSubId,
-      language: currentLanguage,
-      services: {
-        storage: storageService,
-        ui: uiService,
-        events: eventBus,
-        permissions: permissionService,
-      },
-    });
-  } else {
-    contentCard.innerHTML = "<p>Modul nebyl nalezen.</p>";
-  }
-
-  main.appendChild(contentCard);
-
-  shell.appendChild(sidebar);
-  shell.appendChild(main);
-  root.appendChild(shell);
-}
-
-async function init() {
+async function bootstrap() {
   initTheme();
-  isSidebarCollapsed = readStoredSidebarState();
-
-  // registrace core služeb do serviceRegistry – moduly si je mohou vyzvednout
-  registerService("storage", storageService);
-  registerService("ui", uiService);
-  registerService("events", eventBus);
-  registerService("permissions", permissionService);
-
-  // jazyk – zatím natvrdo cs, do budoucna z configu/uživatele
-  currentLanguage = "cs";
-  setLanguage(currentLanguage);
-
-  root.innerHTML = '<div class="app-loading">Načítám aplikaci…</div>';
-
-  try {
-    appDefinition = await loadAppDefinition();
-  } catch (err) {
-    console.error(err);
-    root.innerHTML =
-      '<div class="app-error">Nepodařilo se načíst konfiguraci aplikace (config/app.json).</div>';
-    return;
+  isSidebarCollapsed = loadSidebarState();
+  appConfig = await loadAppConfig();
+  if (!appConfig || typeof appConfig !== "object") {
+    appConfig = {};
   }
-
-  // migrace dat (zatím jen placeholder)
-  runMigrations({});
-
-  // Načtení modulů proběhne až po ověření přihlášeného uživatele
-
-  currentUser = await loadCurrentUser();
-  if (!currentUser) {
-    renderLogin();
-    return;
-  }
-
-  await loadModulesFromDirectory();
-
-  if (!Object.keys(MODULE_REGISTRY).length) {
-    root.innerHTML =
-      '<div class="app-error">Nebyl nalezen žádný modul. Zkontrolujte adresář /modules a config/modules.php.</div>';
-    return;
-  }
-
-  await initModules({
-    moduleRegistry: MODULE_REGISTRY,
-    appConfig: appConfigForCore,
-    currentUser,
-  });
-
-  await initAppAfterLogin();
+  appConfig.moduleConfig = appConfig.moduleConfig || {};
+  appConfig.enabledModules = appConfig.enabledModules || [];
+  await loadAllModules();
+  modulesLoaded = true;
+  renderShell();
 }
 
-async function initAppAfterLogin() {
-  prepareConfiguration();
+window.addEventListener("hashchange", () => {
+  if (modulesLoaded) renderShell();
+});
 
-  const route = getCurrentRoute();
-  const guarded = runRouteGuards(route, {
-    currentUser,
-    appConfig: appConfigForCore,
-  });
-  if (guarded && guarded.redirectTo) {
-    window.location.hash = guarded.redirectTo;
-    return;
-  }
+onEvent("language:changed", () => {
+  if (modulesLoaded) renderShell();
+});
 
-  const moduleId = activeModules.includes(route.moduleId)
-    ? route.moduleId
-    : activeModules[0];
-  const currentSubId = route.subId || null;
+window.AppCore = {
+  getLanguage,
+  setLanguage,
+  toggleTheme,
+  getTheme,
+};
 
-  if (moduleId !== route.moduleId || currentSubId !== route.subId) {
-    navigateTo(moduleId, currentSubId);
-    return;
-  }
-
-  renderShell(moduleId, currentSubId);
-
-  listenRouteChange((r) => {
-    const guardedR = runRouteGuards(r, {
-      currentUser,
-      appConfig: appConfigForCore,
-    });
-    if (guardedR && guardedR.redirectTo) {
-      window.location.hash = guardedR.redirectTo;
-      return;
-    }
-
-    const id = activeModules.includes(r.moduleId) ? r.moduleId : activeModules[0];
-    const subId = r.subId || null;
-    renderShell(id, subId);
-  });
-}
-
-init();
+renderLogin();
