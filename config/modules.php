@@ -100,15 +100,29 @@ if ($method === 'GET') {
     $enabled = [];
     $permissions = [];
 
+    $available = listAvailableModules();
+    $availableById = [];
+    foreach ($available as $item) {
+        $availableById[$item['id']] = $item;
+    }
+
     if ($dbAvailable && $pdo instanceof PDO && dbHasTable($pdo, 'app_modules')) {
         try {
+            $stmt = $pdo->query('SELECT id, name, enabled, category, sort_order, description, version FROM app_modules');
+        } catch (Throwable $e) {
             $stmt = $pdo->query('SELECT id, name, enabled, category, sort_order FROM app_modules');
+        }
+        try {
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $id = (string) $row['id'];
+                $fallback = $availableById[$id] ?? [];
                 $modules[] = [
                     'id' => (string) $row['id'],
-                    'name' => (string) ($row['name'] ?? $row['id']),
-                    'category' => $row['category'] ?? null,
-                    'order' => (int) ($row['sort_order'] ?? 0),
+                    'name' => (string) ($row['name'] ?? $fallback['name'] ?? $row['id']),
+                    'description' => $row['description'] ?? ($fallback['description'] ?? null),
+                    'version' => $row['version'] ?? ($fallback['version'] ?? null),
+                    'category' => $row['category'] ?? ($fallback['category'] ?? null),
+                    'order' => (int) ($row['sort_order'] ?? ($fallback['order'] ?? 0)),
                     'enabled' => (bool) $row['enabled'],
                 ];
             }

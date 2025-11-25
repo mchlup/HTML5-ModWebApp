@@ -1,8 +1,11 @@
-// Základní konfigurace modulu "admin".
-// Slouí hlavnì k tomu, aby configManager našel config.js
-// a nepokoušel se volat neexistující config.json.
+// ZÃ¡kladnÃ­ konfigurace modulu "admin".
+// SlouÅ¾Ã­ hlavnÄ› k tomu, aby configManager naÅ¡el config.js
+// a nepokouÅ¡el se volat neexistujÃ­cÃ­ config.json.
 
 export default {
   id: 'admin',
   name: 'Administrace',
+  description: 'SprÃ¡va uÅ¾ivatelÅ¯, rolÃ­ a oprÃ¡vnÄ›nÃ­ aplikace.',
+  version: '1.1.0',
+  category: 'system',
 };

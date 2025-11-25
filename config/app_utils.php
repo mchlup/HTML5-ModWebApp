@@ -40,13 +40,34 @@ function listAvailableModules(string $dir = null): array
 
         $path = $dir . '/' . $name;
         if (is_dir($path) && file_exists($path . '/index.js')) {
-            $modules[] = [
+            $manifest = [
                 'id' => (string) $name,
                 'name' => ucfirst(str_replace(['-', '_'], ' ', (string) $name)),
                 'category' => null,
                 'order' => 0,
                 'enabled' => true,
             ];
+
+            $configPath = $path . '/config.json';
+            if (file_exists($configPath)) {
+                $json = json_decode(file_get_contents($configPath), true);
+                if (is_array($json)) {
+                    if (isset($json['name'])) {
+                        $manifest['name'] = (string) $json['name'];
+                    }
+                    if (isset($json['description'])) {
+                        $manifest['description'] = (string) $json['description'];
+                    }
+                    if (isset($json['version'])) {
+                        $manifest['version'] = (string) $json['version'];
+                    }
+                    if (isset($json['category'])) {
+                        $manifest['category'] = $json['category'];
+                    }
+                }
+            }
+
+            $modules[] = $manifest;
         }
     }
 
