@@ -93,11 +93,18 @@ if (!$userData) {
     jsonResponse(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
 }
 
+session_regenerate_id(true);
+
 if (!in_array('config', $enabledModules, true)) {
     $enabledModules[] = 'config';
 }
 if (!in_array('dashboard', $enabledModules, true)) {
     $enabledModules[] = 'dashboard';
+}
+
+$rolePermissions = [];
+if (!empty($userData['role']) && isset($permissions[$userData['role']])) {
+    $rolePermissions = $permissions[$userData['role']];
 }
 
 if (empty($_SESSION['csrf_token'])) {
@@ -114,10 +121,10 @@ jsonResponse([
         'id' => $userData['id'],
         'username' => $userData['username'],
         'role' => $userData['role'],
-        'permissions' => $permissions,
+        'permissions' => $rolePermissions,
     ],
     'enabledModules' => array_values(array_unique($enabledModules)),
-    'permissions' => $permissions,
+    'permissions' => $rolePermissions,
     'dbAvailable' => $dbAvailable,
     'csrfToken' => $_SESSION['csrf_token'],
 ]);
