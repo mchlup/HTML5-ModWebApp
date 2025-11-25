@@ -1,11 +1,12 @@
-// Z·kladnÌ konfigurace modulu "config".
-// PouûÌv· se hlavnÏ jako identita pro configManager.
+// Z√°kladn√≠ konfigurace modulu "config".
+// Pou≈æ√≠v√° se hlavnƒõ jako identita pro configManager.
 
 const config = {
   id: "config",
   name: "Konfigurace",
-  version: 1,
+  description: "Nastaven√≠ aplikace, datab√°ze a modul≈Ø.",
+  version: "1.2.0",
+  category: "system",
 };
 
 export default config;
-
