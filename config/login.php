@@ -1,47 +1,37 @@
 <?php
 session_start();
-header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/common.php';
+require_once __DIR__ . '/db_connect.php';
 
 $input = json_decode(file_get_contents('php://input'), true);
 $username = $input['username'] ?? '';
 $password = $input['password'] ?? '';
 
 if ($username === '' || $password === '') {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Chybí uživatelské jméno nebo heslo.']);
-    exit;
+    jsonResponse(['success' => false, 'message' => 'Chybí uživatelské jméno nebo heslo.'], 400);
 }
-
-require_once __DIR__ . '/db_connect.php';
 
 $appConfigPath = __DIR__ . '/app.json';
 
-function respond(array $payload, int $status = 200): void
-{
-    http_response_code($status);
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-    exit;
-}
-
 function loadAppDefinition(string $path): array
 {
+    $fallback = [
+        'superAdmin' => [
+            'username' => 'admin',
+            'passwordHash' => password_hash('admin', PASSWORD_DEFAULT),
+            'enabledOfflineLogin' => true,
+            'allowFallbackWithoutDb' => true,
+        ],
+        'defaultEnabledModules' => [],
+    ];
     if (!file_exists($path)) {
-        return [
-            'superAdmin' => ['username' => 'admin', 'password' => 'admin'],
-            'defaultEnabledModules' => [],
-        ];
+        return $fallback;
     }
     $json = json_decode(file_get_contents($path), true);
     if (!is_array($json)) {
-        return [
-            'superAdmin' => ['username' => 'admin', 'password' => 'admin'],
-            'defaultEnabledModules' => [],
-        ];
+        return $fallback;
     }
-    if (empty($json['superAdmin'])) {
-        $json['superAdmin'] = ['username' => 'admin', 'password' => 'admin'];
-    }
-    return $json;
+    return array_replace_recursive($fallback, $json);
 }
 
 function listAvailableModules(): array
@@ -67,6 +57,14 @@ $userData = null;
 $permissions = [];
 $enabledModules = [];
 $dbAvailable = false;
+
+$rateKey = 'login_failures_' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+if (!isset($_SESSION[$rateKey])) {
+    $_SESSION[$rateKey] = ['count' => 0, 'time' => time()];
+}
+if ($_SESSION[$rateKey]['count'] >= 5 && (time() - $_SESSION[$rateKey]['time']) < 900) {
+    jsonResponse(['success' => false, 'message' => 'Příliš mnoho pokusů, zkuste to později.'], 429);
+}
 
 // Pokus 1: DB login
 try {
@@ -102,36 +100,48 @@ try {
 }
 
 if ($dbAvailable && !$userData) {
-    respond(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
+    $_SESSION[$rateKey]['count'] += 1;
+    $_SESSION[$rateKey]['time'] = time();
+    jsonResponse(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
 }
 
 // Pokus 2: fallback na super-admina z app.json
 if (!$dbAvailable && !$userData) {
     $sa = $appDefinition['superAdmin'];
-    if ($username === ($sa['username'] ?? 'admin') && $password === ($sa['password'] ?? 'admin')) {
-        $userData = [
-            'id' => 0,
-            'username' => $sa['username'] ?? 'admin',
-            'role' => 'super-admin',
-        ];
-        $enabledModules = listAvailableModules();
-        $permissions = ['*' => 'full'];
+    if (!empty($sa['enabledOfflineLogin']) && !empty($sa['allowFallbackWithoutDb'])) {
+        if ($username === ($sa['username'] ?? 'admin') && password_verify($password, $sa['passwordHash'] ?? '')) {
+            $userData = [
+                'id' => 0,
+                'username' => $sa['username'] ?? 'admin',
+                'role' => 'super-admin',
+            ];
+            $enabledModules = listAvailableModules();
+            $permissions = ['*' => 'full'];
+        }
     }
 }
 
 if (!$userData) {
-    respond(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
+    $_SESSION[$rateKey]['count'] += 1;
+    $_SESSION[$rateKey]['time'] = time();
+    jsonResponse(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
 }
 
 if (!in_array('config', $enabledModules, true)) {
     $enabledModules[] = 'config';
 }
+if (!in_array('dashboard', $enabledModules, true)) {
+    $enabledModules[] = 'dashboard';
+}
 
+session_regenerate_id(true);
+$csrf = bin2hex(random_bytes(16));
+$_SESSION['csrf_token'] = $csrf;
 $_SESSION['user_id'] = $userData['id'];
 $_SESSION['username'] = $userData['username'];
 $_SESSION['role'] = $userData['role'];
 
-respond([
+jsonResponse([
     'success' => true,
     'user' => [
         'id' => $userData['id'],
@@ -142,4 +152,5 @@ respond([
     'enabledModules' => array_values(array_unique($enabledModules)),
     'permissions' => $permissions,
     'dbAvailable' => $dbAvailable,
+    'csrfToken' => $csrf,
 ]);
