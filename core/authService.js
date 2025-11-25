@@ -34,6 +34,7 @@ export async function login(username, password) {
       moduleConfig: {},
       users: [],
       permissions: data.permissions || data.user?.permissions || {},
+      dbAvailable: Boolean(data.dbAvailable),
     });
     return { user: data.user, enabledModules: data.enabledModules, permissions: data.permissions };
   } catch (err) {
@@ -56,6 +57,7 @@ export async function loadCurrentUser() {
       moduleConfig: {},
       users: [],
       permissions: data.permissions || data.user?.permissions || {},
+      dbAvailable: Boolean(data.dbAvailable),
     });
     return { user: data.user, enabledModules: data.enabledModules, permissions: data.permissions };
   } catch (err) {

@@ -10,7 +10,7 @@ export default {
   register({ moduleRegistry }) {
     moduleRegistry.register({ id: 'dashboard', meta: this.meta, render: this.render });
   },
-  render(container, context = {}) {
+  async render(container, context = {}) {
     const user = context.currentUser || {};
     const runtime = context.runtimeConfig || {};
     const wrap = document.createElement('div');
@@ -24,30 +24,59 @@ export default {
     welcome.textContent = labels.welcome.replace('{username}', user.username || '');
     wrap.appendChild(welcome);
 
-    const listTitle = document.createElement('h2');
-    listTitle.textContent = labels.modules;
-    wrap.appendChild(listTitle);
+    const grid = document.createElement('div');
+    grid.className = 'dashboard-widgets';
 
-    const list = document.createElement('ul');
+    const dbCard = document.createElement('div');
+    dbCard.className = 'card';
+    dbCard.innerHTML = `<h3>Databáze</h3><p>${runtime.dbAvailable ? 'Dostupná' : 'Nedostupná / fallback'}</p>`;
+    grid.appendChild(dbCard);
+
+    const moduleCard = document.createElement('div');
+    moduleCard.className = 'card';
     const enabled = Array.isArray(runtime.enabledModules) ? runtime.enabledModules : [];
-    enabled.forEach((id) => {
-      const item = document.createElement('li');
-      item.textContent = id;
-      list.appendChild(item);
-    });
-    if (!enabled.length) {
-      const item = document.createElement('li');
-      item.textContent = 'Žádné moduly nejsou povoleny';
-      list.appendChild(item);
-    }
-    wrap.appendChild(list);
+    moduleCard.innerHTML = `<h3>${labels.modules}</h3><p>${enabled.join(', ') || 'Žádné moduly nejsou povoleny'}</p>`;
+    grid.appendChild(moduleCard);
 
-    const placeholder = document.createElement('div');
-    placeholder.className = 'dashboard-widgets';
-    placeholder.textContent = labels.widgets;
-    wrap.appendChild(placeholder);
+    const usersCard = document.createElement('div');
+    usersCard.className = 'card';
+    usersCard.innerHTML = '<h3>Uživatelé</h3><p>Načítám...</p>';
+    grid.appendChild(usersCard);
+
+    const logCard = document.createElement('div');
+    logCard.className = 'card';
+    logCard.innerHTML = '<h3>Poslední log</h3><p>Načítám...</p>';
+    grid.appendChild(logCard);
+
+    wrap.appendChild(grid);
 
     container.innerHTML = '';
     container.appendChild(wrap);
+
+    // doplň data z backendu
+    try {
+      const res = await fetch('./config/users.php', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (res.ok && data.success !== false && Array.isArray(data.users)) {
+        usersCard.querySelector('p').textContent = `${data.users.length} uživatelů`;
+      } else {
+        usersCard.querySelector('p').textContent = 'Nelze načíst';
+      }
+    } catch (err) {
+      usersCard.querySelector('p').textContent = 'Nelze načíst';
+    }
+
+    try {
+      const res = await fetch('./config/log.php', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (res.ok && data.success !== false && Array.isArray(data.logs) && data.logs.length) {
+        const last = data.logs[0];
+        logCard.querySelector('p').textContent = `${last.type || ''}: ${last.message || ''}`;
+      } else {
+        logCard.querySelector('p').textContent = 'Žádné logy.';
+      }
+    } catch (err) {
+      logCard.querySelector('p').textContent = 'Nelze načíst logy';
+    }
   },
 };

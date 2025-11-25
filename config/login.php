@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
+require_once __DIR__ . '/app_utils.php';
 
 $input = json_decode(file_get_contents('php://input'), true);
 $username = $input['username'] ?? '';
@@ -11,48 +12,7 @@ if ($username === '' || $password === '') {
     jsonResponse(['success' => false, 'message' => 'Chybí uživatelské jméno nebo heslo.'], 400);
 }
 
-$appConfigPath = __DIR__ . '/app.json';
-
-function loadAppDefinition(string $path): array
-{
-    $fallback = [
-        'superAdmin' => [
-            'username' => 'admin',
-            'passwordHash' => password_hash('admin', PASSWORD_DEFAULT),
-            'enabledOfflineLogin' => true,
-            'allowFallbackWithoutDb' => true,
-        ],
-        'defaultEnabledModules' => [],
-    ];
-    if (!file_exists($path)) {
-        return $fallback;
-    }
-    $json = json_decode(file_get_contents($path), true);
-    if (!is_array($json)) {
-        return $fallback;
-    }
-    return array_replace_recursive($fallback, $json);
-}
-
-function listAvailableModules(): array
-{
-    $modules = [];
-    $dir = __DIR__ . '/../modules';
-    if (!is_dir($dir)) {
-        return $modules;
-    }
-    foreach (scandir($dir) as $name) {
-        if ($name === '.' || $name === '..') {
-            continue;
-        }
-        if (is_dir($dir . '/' . $name) && file_exists($dir . '/' . $name . '/index.js')) {
-            $modules[] = $name;
-        }
-    }
-    return $modules;
-}
-
-$appDefinition = loadAppDefinition($appConfigPath);
+$appDefinition = loadAppDefinition();
 $userData = null;
 $permissions = [];
 $enabledModules = [];
@@ -66,7 +26,6 @@ if ($_SESSION[$rateKey]['count'] >= 5 && (time() - $_SESSION[$rateKey]['time']) 
     jsonResponse(['success' => false, 'message' => 'Příliš mnoho pokusů, zkuste to později.'], 429);
 }
 
-// Pokus 1: DB login
 try {
     $pdo = getDbConnection();
     $dbAvailable = true;
@@ -75,7 +34,7 @@ try {
     $row = $stmt->fetch();
     if ($row && password_verify($password, $row['password'])) {
         $userData = [
-            'id' => (int)$row['id'],
+            'id' => (int) $row['id'],
             'username' => $row['username'],
             'role' => $row['role'],
         ];
@@ -86,10 +45,18 @@ try {
             $enabledModules = [];
         }
         try {
-            $permStmt = $pdo->prepare('SELECT module_id, rights FROM app_permissions WHERE user_id = ?');
-            $permStmt->execute([$userData['id']]);
+            $permStmt = $pdo->query('SELECT role, module_id, level FROM app_permissions');
             while ($perm = $permStmt->fetch(PDO::FETCH_ASSOC)) {
-                $permissions[$perm['module_id']] = $perm['rights'];
+                $role = (string) ($perm['role'] ?? 'user');
+                $moduleId = (string) ($perm['module_id'] ?? '');
+                $level = (string) ($perm['level'] ?? 'none');
+                if ($moduleId === '') {
+                    continue;
+                }
+                if (!isset($permissions[$role])) {
+                    $permissions[$role] = [];
+                }
+                $permissions[$role][$moduleId] = $level;
             }
         } catch (Throwable $e) {
             $permissions = [];
@@ -105,7 +72,6 @@ if ($dbAvailable && !$userData) {
     jsonResponse(['success' => false, 'message' => 'Neplatné přihlašovací údaje.'], 401);
 }
 
-// Pokus 2: fallback na super-admina z app.json
 if (!$dbAvailable && !$userData) {
     $sa = $appDefinition['superAdmin'];
     if (!empty($sa['enabledOfflineLogin']) && !empty($sa['allowFallbackWithoutDb'])) {
@@ -115,8 +81,8 @@ if (!$dbAvailable && !$userData) {
                 'username' => $sa['username'] ?? 'admin',
                 'role' => 'super-admin',
             ];
-            $enabledModules = listAvailableModules();
-            $permissions = ['*' => 'full'];
+            $enabledModules = array_map(static fn(array $m) => (string) $m['id'], listAvailableModules());
+            $permissions = ['super-admin' => ['*' => 'full']];
         }
     }
 }
@@ -134,9 +100,10 @@ if (!in_array('dashboard', $enabledModules, true)) {
     $enabledModules[] = 'dashboard';
 }
 
-session_regenerate_id(true);
-$csrf = bin2hex(random_bytes(16));
-$_SESSION['csrf_token'] = $csrf;
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
+}
+
 $_SESSION['user_id'] = $userData['id'];
 $_SESSION['username'] = $userData['username'];
 $_SESSION['role'] = $userData['role'];
@@ -152,5 +119,5 @@ jsonResponse([
     'enabledModules' => array_values(array_unique($enabledModules)),
     'permissions' => $permissions,
     'dbAvailable' => $dbAvailable,
-    'csrfToken' => $csrf,
+    'csrfToken' => $_SESSION['csrf_token'],
 ]);

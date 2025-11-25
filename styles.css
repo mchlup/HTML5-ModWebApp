@@ -1070,3 +1070,39 @@ body.theme-dark .config-tip {
   background: rgba(59, 130, 246, 0.12);
 }
 
+
+.permissions-table, .log-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.permissions-table th, .permissions-table td,
+.log-table th, .log-table td {
+  border: 1px solid var(--border-color, #ddd);
+  padding: 8px;
+  text-align: left;
+}
+
+.admin-user-row {
+  display: grid;
+  grid-template-columns: 1fr 160px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.log-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.dashboard-widgets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
