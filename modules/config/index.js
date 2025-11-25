@@ -1,3 +1,4 @@
+import labels from './lang_cs.js';
 import { registerModule } from "../../core/moduleRegistry.js";
 import { ensureRuntimeConfig, saveRuntimeConfig, setRuntimeConfig, loadRuntimeConfig } from "../../core/configManager.js";
 import { getAllModules } from "../../core/moduleRegistry.js";

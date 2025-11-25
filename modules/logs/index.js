@@ -1,115 +1,92 @@
-import { requestWithCsrf } from '../../core/authService.js';
-import { showToast } from '../../core/uiService.js';
+import labels from "./lang_cs.js";
+import { registerModule } from "../../core/moduleRegistry.js";
+import { showToast } from "../../core/uiService.js";
 
-const META = {
-  id: 'logs',
-  iconClass: 'fa-solid fa-clipboard-list',
-  labels: { cs: 'Logy', en: 'Logs' },
-};
-
+// Jednoduchý loader logů – můžeš později napojit na skutečný backend endpoint.
 async function fetchLogs() {
-  const res = await fetch('./config/log.php', { credentials: 'same-origin' });
-  const data = await res.json();
-  if (!res.ok || data.success === false) throw new Error(data.message || 'Načtení logů selhalo');
-  return data.logs || [];
-}
-
-async function createLog(payload) {
-  const res = await requestWithCsrf('./config/log.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!res.ok || data.success === false) throw new Error(data.message || 'Zápis logu selhal');
-  return true;
-}
-
-function renderLogTable(container, logs) {
-  const table = document.createElement('table');
-  table.className = 'log-table';
-  const head = document.createElement('tr');
-  head.innerHTML = '<th>ID</th><th>Typ</th><th>Modul</th><th>Uživatel</th><th>Čas</th><th>Zpráva</th>';
-  table.appendChild(head);
-  logs.forEach((log) => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${log.id ?? ''}</td>
-      <td>${log.type || ''}</td>
-      <td>${log.module || ''}</td>
-      <td>${log.username || ''}</td>
-      <td>${log.created_at || ''}</td>
-      <td>${log.message || ''}</td>
-    `;
-    table.appendChild(row);
-  });
-  container.appendChild(table);
-}
-
-function renderForm(container, refresh) {
-  const form = document.createElement('form');
-  form.className = 'log-form';
-  form.innerHTML = `
-    <label>Typ<select name="type">
-      <option value="info">info</option>
-      <option value="warn">warn</option>
-      <option value="error">error</option>
-    </select></label>
-    <label>Modul<input name="module" placeholder="modul"></label>
-    <label>Zpráva<input name="message" required></label>
-    <button type="submit">Zapsat log</button>
-  `;
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const payload = Object.fromEntries(new FormData(form));
-    try {
-      await createLog(payload);
-      showToast('Log uložen.');
-      form.reset();
-      refresh();
-    } catch (err) {
-      showToast(err.message, { type: 'error' });
+  try {
+    const res = await fetch("./config/logs.php", { credentials: "same-origin" });
+    if (!res.ok) {
+      throw new Error("Načtení logů selhalo");
     }
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.message || "Načtení logů selhalo");
+    }
+    return Array.isArray(data.logs) ? data.logs : [];
+  } catch (err) {
+    console.warn("Chyba při načítání logů", err);
+    return [];
+  }
+}
+
+function render(container, context = {}) {
+  container.innerHTML = "";
+
+  const wrap = document.createElement("div");
+  wrap.className = "logs-module";
+
+  const title = document.createElement("h1");
+  title.textContent = labels.title;
+  wrap.appendChild(title);
+
+  const table = document.createElement("table");
+  table.className = "logs-table";
+
+  const thead = document.createElement("thead");
+  thead.innerHTML = `
+    <tr>
+      <th>${labels.time}</th>
+      <th>${labels.level}</th>
+      <th>${labels.user}</th>
+      <th>${labels.message}</th>
+    </tr>
+  `;
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  table.appendChild(tbody);
+
+  wrap.appendChild(table);
+  container.appendChild(wrap);
+
+  fetchLogs().then((logs) => {
+    tbody.innerHTML = "";
+    if (!logs.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 4;
+      cell.textContent = labels.empty;
+      row.appendChild(cell);
+      tbody.appendChild(row);
+      return;
+    }
+
+    logs.forEach((log) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${log.time || ""}</td>
+        <td>${log.level || ""}</td>
+        <td>${log.user || ""}</td>
+        <td>${log.message || ""}</td>
+      `;
+      tbody.appendChild(row);
+    });
+  }).catch((err) => {
+    console.error(err);
+    showToast("Nepodařilo se načíst logy.", { type: "error" });
   });
-  container.appendChild(form);
 }
 
 export default {
-  id: META.id,
-  meta: META,
-  register({ moduleRegistry }) {
-    moduleRegistry.register({ id: META.id, meta: META, render: this.render });
+  register() {
+    registerModule("logs", {
+      id: "logs",
+      meta: { iconClass: "fa-solid fa-clipboard-list", labels: { cs: labels.title } },
+      render,
+    });
   },
-  async render(container) {
-    container.innerHTML = '';
-    const title = document.createElement('h1');
-    title.textContent = META.labels.cs;
-    container.appendChild(title);
-
-    const formHolder = document.createElement('div');
-    formHolder.className = 'card';
-    container.appendChild(formHolder);
-
-    const listHolder = document.createElement('div');
-    listHolder.className = 'card';
-    container.appendChild(listHolder);
-
-    const refresh = async () => {
-      listHolder.innerHTML = 'Načítám logy...';
-      try {
-        const logs = await fetchLogs();
-        listHolder.innerHTML = '';
-        if (!logs.length) {
-          listHolder.textContent = 'Žádné logy.';
-          return;
-        }
-        renderLogTable(listHolder, logs);
-      } catch (err) {
-        listHolder.textContent = err.message;
-      }
-    };
-
-    renderForm(formHolder, refresh);
-    refresh();
-  },
+  meta: { iconClass: "fa-solid fa-clipboard-list", labels: { cs: labels.title } },
+  render,
 };
+

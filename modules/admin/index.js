@@ -99,9 +99,6 @@ export default {
     iconClass: 'fa-solid fa-user-shield',
     labels: { cs: labels.title },
   },
-  register({ moduleRegistry }) {
-    moduleRegistry.register({ id: 'admin', meta: this.meta, render: this.render });
-  },
   async render(container, context = {}) {
     container.innerHTML = '';
     if (!canManage(context)) {

@@ -7,9 +7,6 @@ export default {
     labels: { cs: labels.title },
     order: 0,
   },
-  register({ moduleRegistry }) {
-    moduleRegistry.register({ id: 'dashboard', meta: this.meta, render: this.render });
-  },
   async render(container, context = {}) {
     const user = context.currentUser || {};
     const runtime = context.runtimeConfig || {};
