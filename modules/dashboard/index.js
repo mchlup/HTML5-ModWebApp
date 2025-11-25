@@ -1,4 +1,4 @@
-import labels from './lang_cz.js';
+import labels from './lang_cs.js';
 
 export default {
   id: 'dashboard',
