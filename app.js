@@ -61,6 +61,8 @@ function renderModule(container, moduleId, subId) {
         acc[m.id] = m;
         return acc;
       }, {}),
+      currentUser,
+      runtimeConfig,
     });
   } else {
     container.textContent = "Modul nebyl nalezen.";

@@ -4,10 +4,12 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
+require_once __DIR__ . '/app_utils.php';
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$role = $_SESSION['role'] ?? 'guest';
 
-if (empty($_SESSION['role']) || !in_array($_SESSION['role'], ['super-admin', 'admin'], true)) {
+if (empty($role) || !in_array($role, ['super-admin', 'admin'], true)) {
     jsonResponse(['success' => false, 'message' => 'Nedostatečná oprávnění.'], 403);
 }
 if (in_array($method, ['POST', 'PUT', 'DELETE'], true)) {
@@ -17,17 +19,35 @@ if (in_array($method, ['POST', 'PUT', 'DELETE'], true)) {
 try {
     $pdo = getDbConnection();
 } catch (Throwable $e) {
-    http_response_code(500);
-    echo json_encode([
+    jsonResponse([
         'success' => false,
         'message' => 'Databázové připojení se nezdařilo: ' . $e->getMessage(),
-    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-    exit;
+    ], 500);
+}
+
+$driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+if ($driver === 'mysql') {
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS app_permissions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            role VARCHAR(50) NOT NULL,
+            module_id VARCHAR(190) NOT NULL,
+            level VARCHAR(50) NOT NULL DEFAULT "none"
+        )'
+    );
+} else {
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS app_permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role VARCHAR(50) NOT NULL,
+            module_id VARCHAR(190) NOT NULL,
+            level VARCHAR(50) NOT NULL DEFAULT "none"
+        )'
+    );
 }
 
 if ($method === 'GET') {
     try {
-        // Uživatelé
         $users = [];
         $stmt = $pdo->query('SELECT id, username, role FROM app_users ORDER BY username');
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -38,123 +58,86 @@ if ($method === 'GET') {
             ];
         }
 
-        // Moduly z tabulky app_modules
         $modules = [];
-        $seen = [];
-
-        $stmt = $pdo->query('SELECT id, enabled FROM app_modules ORDER BY id');
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $id = (string) $row['id'];
-            $modules[] = [
-                'id' => $id,
-                'enabled' => !empty($row['enabled']),
-            ];
-            $seen[$id] = true;
-        }
-
-        // Doplň moduly z adresáře /modules (pro jistotu)
-        $modulesDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'modules';
-        if (is_dir($modulesDir)) {
-            foreach (scandir($modulesDir) as $entry) {
-                if ($entry === '.' || $entry === '..') {
-                    continue;
-                }
-                $full = $modulesDir . DIRECTORY_SEPARATOR . $entry;
-                if (!is_dir($full)) {
-                    continue;
-                }
-                if (!isset($seen[$entry])) {
-                    $modules[] = [
-                        'id' => $entry,
-                        'enabled' => true,
-                    ];
-                    $seen[$entry] = true;
-                }
+        try {
+            $modStmt = $pdo->query('SELECT id, enabled FROM app_modules ORDER BY sort_order');
+            while ($row = $modStmt->fetch(PDO::FETCH_ASSOC)) {
+                $modules[] = [
+                    'id' => (string) $row['id'],
+                    'enabled' => !empty($row['enabled']),
+                ];
             }
+        } catch (Throwable $e) {
+            $modules = listAvailableModules();
         }
 
-        // Ploché permissions (user_id, module_id, rights)
         $permissions = [];
-        $stmt = $pdo->query('SELECT user_id, module_id, rights FROM app_permissions');
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $permissions[] = [
-                'user_id' => (int) $row['user_id'],
-                'module_id' => (string) $row['module_id'],
-                'rights' => (string) $row['rights'],
-            ];
+        $permStmt = $pdo->query('SELECT role, module_id, level FROM app_permissions');
+        while ($row = $permStmt->fetch(PDO::FETCH_ASSOC)) {
+            $r = (string) ($row['role'] ?? 'user');
+            $module = (string) ($row['module_id'] ?? '');
+            if ($module === '') {
+                continue;
+            }
+            if (!isset($permissions[$r])) {
+                $permissions[$r] = [];
+            }
+            $permissions[$r][$module] = (string) ($row['level'] ?? 'none');
         }
 
-        echo json_encode([
+        jsonResponse([
             'success' => true,
             'users' => $users,
             'modules' => $modules,
             'permissions' => $permissions,
-        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        ]);
     } catch (Throwable $e) {
-        http_response_code(500);
-        echo json_encode([
+        jsonResponse([
             'success' => false,
             'message' => 'Chyba při načítání oprávnění: ' . $e->getMessage(),
-        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        ], 500);
     }
-    exit;
 }
 
 if ($method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
-
-    if (!is_array($input) || !isset($input['permissions']) || !is_array($input['permissions'])) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'Neplatný formát požadavku.'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-        exit;
+    $permissions = is_array($input['permissions'] ?? null) ? $input['permissions'] : null;
+    if ($permissions === null) {
+        jsonResponse(['success' => false, 'message' => 'Neplatný formát požadavku.'], 400);
     }
-
-    $permissions = $input['permissions'];
 
     try {
         $pdo->beginTransaction();
-
-        // Jednoduchý model: smažeme všechna oprávnění a vložíme znovu to, co přijde z UI
         $pdo->exec('DELETE FROM app_permissions');
-
         $stmtInsert = $pdo->prepare(
-            'INSERT INTO app_permissions (user_id, module_id, rights) VALUES (:user_id, :module_id, :rights)'
+            'INSERT INTO app_permissions (role, module_id, level) VALUES (:role, :module_id, :level)'
         );
-
-        foreach ($permissions as $perm) {
-            $userId = isset($perm['user_id']) ? (int) $perm['user_id'] : 0;
-            $moduleId = isset($perm['module_id']) ? trim((string) $perm['module_id']) : '';
-            $rights = isset($perm['rights']) ? (string) $perm['rights'] : 'none';
-
-            if ($userId <= 0 || $moduleId === '' || $rights === 'none') {
-                // none = žádný záznam (žádný řádek v app_permissions)
+        foreach ($permissions as $roleKey => $modules) {
+            if (!is_array($modules)) {
                 continue;
             }
-
-            $stmtInsert->execute([
-                ':user_id' => $userId,
-                ':module_id' => $moduleId,
-                ':rights' => $rights,
-            ]);
+            foreach ($modules as $moduleId => $level) {
+                if ($level === 'none' || $moduleId === '') {
+                    continue;
+                }
+                $stmtInsert->execute([
+                    ':role' => (string) $roleKey,
+                    ':module_id' => (string) $moduleId,
+                    ':level' => (string) $level,
+                ]);
+            }
         }
-
         $pdo->commit();
-
-        echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        jsonResponse(['success' => true]);
     } catch (Throwable $e) {
-        $pdo->rollBack();
-        http_response_code(500);
-        echo json_encode([
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        jsonResponse([
             'success' => false,
             'message' => 'Chyba při ukládání oprávnění: ' . $e->getMessage(),
-        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        ], 500);
     }
-    exit;
 }
 
-http_response_code(405);
-echo json_encode(
-    ['success' => false, 'message' => 'Nepodporovaná HTTP metoda.'],
-    JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT
-);
-
+jsonResponse(['success' => false, 'message' => 'Nepodporovaná HTTP metoda.'], 405);

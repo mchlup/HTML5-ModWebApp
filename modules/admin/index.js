@@ -1,7 +1,97 @@
 import labels from './lang_cz.js';
 import { showToast } from '../../core/uiService.js';
-import { getRuntimeConfig } from '../../core/configManager.js';
 import { requestWithCsrf } from '../../core/authService.js';
+
+function canManage(context) {
+  const role = context?.currentUser?.role || 'user';
+  return role === 'super-admin' || role === 'admin';
+}
+
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, { credentials: 'same-origin', ...options });
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || 'Operace selhala');
+  }
+  return data;
+}
+
+async function apiPost(url, payload) {
+  const res = await requestWithCsrf(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || 'Operace selhala');
+  }
+  return data;
+}
+
+async function apiPut(url, payload) {
+  const res = await requestWithCsrf(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || 'Operace selhala');
+  }
+  return data;
+}
+
+async function apiDelete(url) {
+  const res = await requestWithCsrf(url, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || 'Operace selhala');
+  }
+  return data;
+}
+
+function renderUserRow(user, onSave, onDelete) {
+  const row = document.createElement('div');
+  row.className = 'admin-user-row';
+
+  const name = document.createElement('div');
+  name.textContent = user.username;
+  row.appendChild(name);
+
+  const roleSelect = document.createElement('select');
+  ['user', 'admin', 'super-admin'].forEach((role) => {
+    const opt = document.createElement('option');
+    opt.value = role;
+    opt.textContent = role;
+    if (role === user.role) opt.selected = true;
+    roleSelect.appendChild(opt);
+  });
+  row.appendChild(roleSelect);
+
+  const passInput = document.createElement('input');
+  passInput.type = 'password';
+  passInput.placeholder = 'Nové heslo (volitelné)';
+  row.appendChild(passInput);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.textContent = 'Uložit';
+  saveBtn.addEventListener('click', () => {
+    onSave({ id: user.id, role: roleSelect.value, password: passInput.value || undefined });
+    passInput.value = '';
+  });
+  row.appendChild(saveBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'danger';
+  delBtn.textContent = 'Smazat';
+  delBtn.addEventListener('click', () => onDelete(user));
+  row.appendChild(delBtn);
+
+  return row;
+}
 
 export default {
   id: 'admin',
@@ -12,32 +102,15 @@ export default {
   register({ moduleRegistry }) {
     moduleRegistry.register({ id: 'admin', meta: this.meta, render: this.render });
   },
-  async fetchUsers() {
-    const res = await fetch('./config/users.php', { credentials: 'same-origin' });
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.message || 'Chyba načítání uživatelů');
-    return data.users || [];
-  },
-  async createUser(payload) {
-    const res = await requestWithCsrf('./config/users.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.message || 'Uložení se nezdařilo');
-    return data.user;
-  },
-  render(container) {
-    const runtime = getRuntimeConfig();
-    const canSee = (runtime.permissions?.['*'] === 'full') || (runtime.permissions?.admin === 'full');
+  async render(container, context = {}) {
     container.innerHTML = '';
-    if (!canSee) {
+    if (!canManage(context)) {
       const denied = document.createElement('p');
       denied.textContent = 'Nemáte oprávnění k zobrazení administrace.';
       container.appendChild(denied);
       return;
     }
+
     const title = document.createElement('h1');
     title.textContent = labels.title;
     container.appendChild(title);
@@ -60,13 +133,14 @@ export default {
       e.preventDefault();
       const fd = new FormData(form);
       try {
-        await this.createUser({
+        await apiPost('./config/users.php', {
           username: fd.get('username'),
           password: fd.get('password'),
           role: fd.get('role'),
         });
         showToast('Uživatel vytvořen.');
-        await renderUsers();
+        form.reset();
+        renderUsers();
       } catch (err) {
         console.error(err);
         showToast(err.message, { type: 'error' });
@@ -81,14 +155,36 @@ export default {
     const renderUsers = async () => {
       list.innerHTML = '';
       try {
-        const users = await this.fetchUsers();
-        const ul = document.createElement('ul');
+        const data = await apiFetch('./config/users.php');
+        const users = data.users || [];
+        if (!users.length) {
+          list.textContent = 'Žádní uživatelé';
+          return;
+        }
         users.forEach((u) => {
-          const li = document.createElement('li');
-          li.textContent = `${u.username} (${u.role})`;
-          ul.appendChild(li);
+          const row = renderUserRow(
+            u,
+            async (payload) => {
+              try {
+                await apiPut('./config/users.php', payload);
+                showToast('Uživatel aktualizován.');
+              } catch (err) {
+                showToast(err.message, { type: 'error' });
+              }
+            },
+            async (user) => {
+              if (!confirm('Opravdu chcete smazat uživatele?')) return;
+              try {
+                await apiDelete(`./config/users.php?id=${user.id}`);
+                showToast('Uživatel smazán.');
+                renderUsers();
+              } catch (err) {
+                showToast(err.message, { type: 'error' });
+              }
+            }
+          );
+          list.appendChild(row);
         });
-        list.appendChild(ul);
       } catch (err) {
         console.error(err);
         showToast(err.message, { type: 'error' });

@@ -1,6 +1,7 @@
 import { STORAGE_KEYS } from "./constants.js";
 import { get as getStore, set as setStore } from "./storageManager.js";
 import { showToast } from "./uiService.js";
+import { requestWithCsrf } from "./authService.js";
 
 const APP_CONFIG_URL = "./config/app.json";
 const MODULES_ENDPOINT = "./config/modules.php";
@@ -10,6 +11,8 @@ let runtimeConfig = {
   moduleConfig: {},
   users: [],
   permissions: {},
+  modules: [],
+  dbAvailable: false,
 };
 let appDefinition = null;
 
@@ -26,6 +29,8 @@ function normalizeRuntimeConfig(cfg) {
     moduleConfig: cfg?.moduleConfig || {},
     users: Array.isArray(cfg?.users) ? cfg.users : [],
     permissions: cfg?.permissions || {},
+    modules: Array.isArray(cfg?.modules) ? cfg.modules : [],
+    dbAvailable: Boolean(cfg?.dbAvailable),
   };
 }
 
@@ -71,7 +76,7 @@ export function setRuntimeConfig(cfg) {
 }
 
 export async function loadRuntimeConfig(options = {}) {
-  if (!options.force && runtimeConfig.enabledModules && runtimeConfig.enabledModules.length) {
+  if (!options.force && runtimeConfig.enabledModules && runtimeConfig.enabledModules.length && runtimeConfig.modules.length) {
     return runtimeConfig;
   }
   try {
@@ -89,7 +94,13 @@ export async function loadRuntimeConfig(options = {}) {
         ? enabledFromResponse
         : modules.map((m) => m.id).filter(Boolean);
     const permissions = data?.permissions && typeof data.permissions === "object" ? data.permissions : {};
-    return persistRuntimeConfig({ ...runtimeConfig, enabledModules, permissions });
+    return persistRuntimeConfig({
+      ...runtimeConfig,
+      enabledModules,
+      permissions,
+      modules,
+      dbAvailable: Boolean(data?.dbAvailable),
+    });
   } catch (err) {
     console.error("Nepodařilo se načíst runtime konfiguraci", err);
     showToast("Načtení konfigurace aplikace selhalo.", { type: "error" });
@@ -98,13 +109,19 @@ export async function loadRuntimeConfig(options = {}) {
 }
 
 export async function ensureRuntimeConfig() {
-  if (runtimeConfig && Array.isArray(runtimeConfig.enabledModules) && runtimeConfig.enabledModules.length) {
+  if (
+    runtimeConfig &&
+    Array.isArray(runtimeConfig.enabledModules) &&
+    runtimeConfig.enabledModules.length &&
+    Array.isArray(runtimeConfig.modules) &&
+    runtimeConfig.modules.length
+  ) {
     return runtimeConfig;
   }
   const cached = getStore(STORAGE_KEYS.APP_CONFIG);
   if (cached) {
     runtimeConfig = normalizeRuntimeConfig(cached);
-    if (runtimeConfig.enabledModules.length) return runtimeConfig;
+    if (runtimeConfig.enabledModules.length && runtimeConfig.modules.length) return runtimeConfig;
   }
   const loaded = await loadRuntimeConfig();
   if (loaded && loaded.enabledModules.length) {
@@ -141,7 +158,7 @@ export async function loadModuleConfig(moduleName) {
 export async function saveRuntimeConfig(config) {
   const payload = Array.isArray(config?.enabledModules) ? config.enabledModules : [];
   try {
-    const res = await fetch(MODULES_ENDPOINT, {
+    const res = await requestWithCsrf(MODULES_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -162,7 +179,7 @@ export async function saveRuntimeConfig(config) {
 }
 
 export function clearRuntimeConfig() {
-  runtimeConfig = { enabledModules: [], moduleConfig: {}, users: [], permissions: {} };
+  runtimeConfig = { enabledModules: [], moduleConfig: {}, users: [], permissions: {}, modules: [], dbAvailable: false };
   setStore(STORAGE_KEYS.APP_CONFIG, runtimeConfig);
 }
 
