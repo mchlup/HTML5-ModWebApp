@@ -1,9 +1,12 @@
 {
   "superAdmin": {
     "username": "admin",
-    "password": "admin"
+    "passwordHash": "$2y$12$1ngYI84k3wVKEoKXhaYvIOY2OAYZrVwKWAHB0Si1mRydOxCeRMst.",
+    "enabledOfflineLogin": true,
+    "allowFallbackWithoutDb": true
   },
   "defaultEnabledModules": [
+    "dashboard",
     "config",
     "crm",
     "erp"
@@ -15,6 +18,8 @@
     "erp": {
       "defaultCurrency": "CZK"
     },
-    "config": {}
+    "config": {},
+    "dashboard": {},
+    "admin": {}
   }
 }

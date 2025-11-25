@@ -2,13 +2,15 @@
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 
+require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
 $method = $_SERVER['REQUEST_METHOD'];
 
 if (empty($_SESSION['role']) || !in_array($_SESSION['role'], ['super-admin', 'admin'], true)) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Nedostatečná oprávnění.']);
-    exit;
+    jsonResponse(['success' => false, 'message' => 'Nedostatečná oprávnění.'], 403);
+}
+if (in_array($method, ['POST', 'PUT', 'DELETE'], true)) {
+    requireCsrfToken();
 }
 
 try {

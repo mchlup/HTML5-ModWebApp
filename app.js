@@ -21,7 +21,7 @@ let isSidebarCollapsed = false;
 function getRoute() {
   const hash = window.location.hash.replace(/^#\//, "");
   const [moduleId, subId] = hash.split("/");
-  return { moduleId: moduleId || "config", subId: subId || null };
+  return { moduleId: moduleId || "dashboard", subId: subId || null };
 }
 
 function persistSidebarState(collapsed) {
