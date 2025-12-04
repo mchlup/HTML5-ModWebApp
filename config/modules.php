@@ -146,6 +146,15 @@ if ($method === 'GET') {
     }
 
     $appDefinition = loadAppDefinition();
+    $sa = $appDefinition['superAdmin'] ?? [];
+    $allowFallbackWithoutDb = !empty($sa['allowFallbackWithoutDb']);
+    if (!$dbAvailable && !$allowFallbackWithoutDb) {
+        jsonResponse([
+            'success' => false,
+            'message' => 'Fallback without database is disabled.',
+            'dbAvailable' => $dbAvailable,
+        ], 503);
+    }
     $defaultEnabled = array_values(array_filter(
         $appDefinition['defaultEnabledModules'] ?? [],
         static fn($id) => isset($availableById[(string) $id])
