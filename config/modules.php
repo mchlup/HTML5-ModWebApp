@@ -147,7 +147,8 @@ if ($method === 'GET') {
 
     $appDefinition = loadAppDefinition();
     $sa = $appDefinition['superAdmin'] ?? [];
-    if (empty($sa['allowFallbackWithoutDb'])) {
+    $allowFallbackWithoutDb = !empty($sa['allowFallbackWithoutDb']);
+    if (!$dbAvailable && !$allowFallbackWithoutDb) {
         jsonResponse([
             'success' => false,
             'message' => 'Fallback without database is disabled.',
