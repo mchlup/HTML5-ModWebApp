@@ -24,7 +24,7 @@ function loadAppDefinition(string $path = __DIR__ . '/app.json'): array
     return array_replace_recursive($fallback, $json);
 }
 
-function listAvailableModules(string $dir = null): array
+function listAvailableModules(?string $dir = null): array
 {
     $modules = [];
     $dir = $dir ?: __DIR__ . '/../modules';

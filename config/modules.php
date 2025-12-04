@@ -5,10 +5,9 @@ require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/app_utils.php';
 
-ensureLoggedIn();
-
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $role = $_SESSION['role'] ?? 'guest';
+$isAuthenticated = !empty($_SESSION['username']);
 
 function dbHasTable(PDO $pdo, string $table): bool
 {
@@ -73,16 +72,16 @@ function fetchPermissions(PDO $pdo): array
     }
 }
 
-function respondWithFallback(): void
+function respondWithFallback(?array $available = null, bool $dbAvailable = false): void
 {
-    $mods = listAvailableModules();
+    $mods = $available ?? listAvailableModules();
     $enabled = array_map(static fn(array $m) => (string) $m['id'], $mods);
     jsonResponse([
         'success' => true,
         'modules' => $mods,
         'enabledModules' => $enabled,
         'permissions' => ['super-admin' => ['*' => 'full']],
-        'dbAvailable' => false,
+        'dbAvailable' => $dbAvailable,
     ]);
 }
 
@@ -106,7 +105,7 @@ if ($method === 'GET') {
         $availableById[$item['id']] = $item;
     }
 
-    if ($dbAvailable && $pdo instanceof PDO && dbHasTable($pdo, 'app_modules')) {
+    if ($isAuthenticated && $dbAvailable && $pdo instanceof PDO && dbHasTable($pdo, 'app_modules')) {
         try {
             $stmt = $pdo->query('SELECT id, name, enabled, category, sort_order, description, version FROM app_modules');
         } catch (Throwable $e) {
@@ -142,18 +141,30 @@ if ($method === 'GET') {
         }
     }
 
-    if ($role === 'super-admin') {
-        respondWithFallback();
+    if ($isAuthenticated && $role === 'super-admin') {
+        respondWithFallback($available, $dbAvailable);
+    }
+
+    $appDefinition = loadAppDefinition();
+    $defaultEnabled = array_values(array_filter(
+        $appDefinition['defaultEnabledModules'] ?? [],
+        static fn($id) => isset($availableById[(string) $id])
+    ));
+    if (!$defaultEnabled) {
+        $defaultEnabled = array_map(static fn(array $m) => (string) $m['id'], $available);
     }
 
     jsonResponse([
-        'success' => false,
-        'message' => 'Moduly nelze načíst – backend není nakonfigurován. Přihlaste se jako super-admin a dokončete nastavení.',
+        'success' => true,
+        'modules' => $available,
+        'enabledModules' => $defaultEnabled,
+        'permissions' => [],
         'dbAvailable' => $dbAvailable,
-    ], 503);
+    ]);
 }
 
 if ($method === 'POST') {
+    ensureLoggedIn();
     $allowSuperAdminWithoutCsrf = true;
     if (!($allowSuperAdminWithoutCsrf && $role === 'super-admin')) {
         requireCsrfToken();
