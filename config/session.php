@@ -1,8 +1,14 @@
 <?php
-session_start();
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/app_utils.php';
+
+if (!session_start()) {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Nepodařilo se zahájit session.'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
 
 if (empty($_SESSION['username'])) {
     jsonResponse(['success' => false, 'message' => 'Session neexistuje.'], 401);
