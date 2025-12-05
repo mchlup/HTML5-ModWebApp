@@ -3,6 +3,19 @@ require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/app_utils.php';
 
+if (!session_start()) {
+    // Nepodařilo se založit session – vrátíme JSON chybu a ukončíme skript
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Nepodařilo se zahájit session.'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
+
+$rawInput = file_get_contents('php://input');
+$input = json_decode($rawInput, true);
+if ($rawInput !== '' && $input === null) {
+    jsonResponse(['success' => false, 'message' => 'Neplatný formát JSON.'], 400);
+}
 $username = $input['username'] ?? '';
 $password = $input['password'] ?? '';
 
