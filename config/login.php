@@ -1,10 +1,8 @@
 <?php
-session_start();
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/app_utils.php';
 
-$input = json_decode(file_get_contents('php://input'), true);
 $username = $input['username'] ?? '';
 $password = $input['password'] ?? '';
 
