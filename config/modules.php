@@ -295,3 +295,4 @@ if ($method === 'POST') {
 
 // cokoliv jiného než GET/POST
 jsonResponse(['success' => false, 'message' => 'Nepodporovaná metoda.'], 405);
+

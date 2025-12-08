@@ -122,6 +122,26 @@ function renderShell() {
   if (!enabled.length) {
     enabled = registry.map((m) => m.id);
   }
+
+  const role = currentUser?.role || "user";
+  const permissions = runtimeConfig.permissions || {};
+  const rolePermissions = permissions[role] || {};
+  const wildcardPermissions = permissions["*"] || {};
+
+  // pokud žádná oprávnění nejsou zadaná, nebo jde o super-admina, nenasazujeme filtr
+  if (Object.keys(permissions).length && role !== "super-admin") {
+    const filtered = enabled.filter((id) => {
+      const level =
+        rolePermissions[id] ??
+        wildcardPermissions[id] ??
+        "manage"; // default = povoleno, pokud není v matici
+      return level && level !== "none";
+    });
+    // pro případ špatné konfigurace nenecháme uživatele úplně „nasucho“
+    if (filtered.length) {
+      enabled = filtered;
+    }
+  }
   enabled.forEach((id) => {
     const entry = getModule(id);
     if (!entry) return;

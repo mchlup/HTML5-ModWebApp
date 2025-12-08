@@ -66,7 +66,7 @@ function renderUserRow(user, onSave, onDelete) {
 
   const roleCell = document.createElement('td');
   const roleSelect = document.createElement('select');
-  ['user', 'admin', 'super-admin'].forEach((role) => {
+  ['user', 'viewer', 'admin', 'super-admin'].forEach((role) => {
     const opt = document.createElement('option');
     opt.value = role;
     opt.textContent = role;
@@ -80,6 +80,8 @@ function renderUserRow(user, onSave, onDelete) {
   const passInput = document.createElement('input');
   passInput.type = 'password';
   passInput.placeholder = 'Nové heslo (volitelné)';
+  // lepší prohlížečové doporučení a heslové manažery
+  passInput.autocomplete = 'new-password';
   passwordCell.appendChild(passInput);
   tr.appendChild(passwordCell);
 
@@ -234,7 +236,7 @@ async function renderPermissionsSection(container) {
 
   try {
     const data = await apiFetch('./config/permissions.php');
-    const roles = new Set(['user', 'admin', 'super-admin']);
+    const roles = new Set(['user', 'viewer', 'admin', 'super-admin']);
     (data.users || []).forEach((u) => roles.add(u.role));
     const modules = data.modules || [];
     const permissions = data.permissions || {};
