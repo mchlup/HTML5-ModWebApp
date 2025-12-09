@@ -89,10 +89,12 @@ export async function loadRuntimeConfig(options = {}) {
       throw new Error(data.message || "Načtení konfigurace selhalo");
     }
     const modules = Array.isArray(data?.modules) ? data.modules : [];
-    const enabledFromResponse = Array.isArray(data?.enabledModules) ? data.enabledModules : null;
+    const enabledFromResponse = Array.isArray(data?.enabledModules)
+      ? data.enabledModules
+      : null;
     const enabledModules =
-      enabledFromResponse && enabledFromResponse.length
-        ? enabledFromResponse
+      enabledFromResponse !== null
+        ? enabledFromResponse.filter(Boolean)
         : modules.map((m) => m.id).filter(Boolean);
     const permissions = data?.permissions && typeof data.permissions === "object" ? data.permissions : {};
     return persistRuntimeConfig({
