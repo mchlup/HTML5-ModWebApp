@@ -13,6 +13,7 @@
   ],
   "modules": {
     "crm": {
+      "name": "CRM výroby nátěrových hmot",
       "defaultCity": "Praha"
     },
     "erp": {

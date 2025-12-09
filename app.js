@@ -145,6 +145,7 @@ function renderShell() {
   enabled.forEach((id) => {
     const entry = getModule(id);
     if (!entry) return;
+    const overrides = runtimeConfig.moduleConfig?.[id] || {};
     const item = document.createElement("div");
     item.className = "nav-item";
     if (id === moduleId) item.classList.add("active");
@@ -153,12 +154,15 @@ function renderShell() {
     }
     const link = document.createElement("a");
     link.href = `#/${id}`;
+    if (overrides.description || entry.meta?.description) {
+      link.title = overrides.description || entry.meta?.description;
+    }
     const iconWrap = document.createElement("span");
     iconWrap.className = "nav-icon";
     iconWrap.innerHTML = `<i class="${entry.meta?.iconClass || "fa-solid fa-circle"}"></i>`;
     const labelSpan = document.createElement("span");
     labelSpan.className = "nav-label";
-    labelSpan.textContent = resolveLabel(entry.meta, entry.id || id);
+    labelSpan.textContent = overrides.name || resolveLabel(entry.meta, entry.id || id);
     link.appendChild(iconWrap);
     link.appendChild(labelSpan);
     if (entry.meta && Array.isArray(entry.meta.navItems) && entry.meta.navItems.length) {
@@ -177,6 +181,9 @@ function renderShell() {
         subDiv.className = "nav-subitem";
         const subLink = document.createElement("a");
         subLink.href = `#/${id}/${subItem.id}`;
+        if (subItem.description) {
+          subLink.title = subItem.description;
+        }
         subLink.textContent = resolveLabel(subItem, subItem.id);
         if (id === moduleId && subItem.id === subId) subDiv.classList.add("active");
         subDiv.appendChild(subLink);
