@@ -1,7 +1,7 @@
 // core/moduleLoader.js
 
 import { registerModule } from "./moduleRegistry.js";
-import { loadModuleConfig, loadRuntimeConfig } from "./configManager.js";
+import { getRuntimeConfig, loadModuleConfig, loadRuntimeConfig } from "./configManager.js";
 import { loadModuleTranslations } from "./languageManager.js";
 import { showToast } from "./uiService.js";
 
@@ -9,10 +9,18 @@ import { showToast } from "./uiService.js";
  * Načte manifest modulů z backendu (config/modules.php).
  * Backend už řeší práva, povolené moduly atd.
  */
-async function fetchManifest() {
+async function fetchManifest(options = {}) {
   try {
+    const forceReload = Boolean(options.forceReload);
+    if (!forceReload) {
+      const cached = getRuntimeConfig();
+      if (Array.isArray(cached?.modules) && cached.modules.length) {
+        return cached.modules;
+      }
+    }
+
     const cfg = await loadRuntimeConfig({ force: true });
-    return Array.isArray(cfg.modules) ? cfg.modules : [];
+    return Array.isArray(cfg?.modules) ? cfg.modules : [];
   } catch (err) {
     console.error("Nepodařilo se načíst manifest modulů", err);
     showToast("Nepodařilo se načíst seznam modulů.", { type: "error" });
@@ -94,8 +102,8 @@ async function loadModule(entry) {
 /**
  * Načte a zaregistruje všechny moduly z manifestu.
  */
-export async function loadAllModules() {
-  const manifest = await fetchManifest();
+export async function loadAllModules(options = {}) {
+  const manifest = await fetchManifest(options);
   const results = [];
 
   for (const entry of manifest) {

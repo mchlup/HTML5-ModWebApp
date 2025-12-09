@@ -235,35 +235,42 @@ if ($method === 'POST') {
         $available = listAvailableModules();
 
         foreach ($available as $module) {
-            $id = (string) $module['id'];
+            $id           = (string) $module['id'];
+            $isEnabled    = in_array($id, $enabledModules, true) ? 1 : 0;
+            $name         = $module['name'] ?? $id;
+            $category     = $module['category'] ?? null;
+            $sortOrder    = $module['order'] ?? 0;
+            $updated      = false;
+            $updateSql    = 'UPDATE app_modules SET name = ?, category = ?, sort_order = ?, enabled = ? WHERE id = ?';
+            $insertSql    = 'INSERT INTO app_modules (id, name, category, sort_order, enabled) VALUES (?, ?, ?, ?, ?)';
+            $fallbackUsed = false;
 
-            // Nejdřív zkusíme update
-            $update = $pdo->prepare(
-                'UPDATE app_modules 
-                 SET name = ?, category = ?, sort_order = ?, enabled = ? 
-                 WHERE id = ?'
-            );
-            $update->execute([
-                $module['name'] ?? $id,
-                $module['category'] ?? null,
-                $module['order'] ?? 0,
-                in_array($id, $enabledModules, true) ? 1 : 0,
-                $id,
-            ]);
+            // Nejprve se pokusíme o plný update se všemi sloupci
+            try {
+                $update = $pdo->prepare($updateSql);
+                $update->execute([$name, $category, $sortOrder, $isEnabled, $id]);
+                $updated = $update->rowCount() > 0;
+            } catch (Throwable $e) {
+                // Starší schéma bez category/sort_order
+                $fallbackUsed = true;
+                $update = $pdo->prepare('UPDATE app_modules SET name = ?, enabled = ? WHERE id = ?');
+                $update->execute([$name, $isEnabled, $id]);
+                $updated = $update->rowCount() > 0;
+            }
 
             // Když se nic neaktualizovalo, vložíme nový záznam
-            if ($update->rowCount() === 0) {
-                $insert = $pdo->prepare(
-                    'INSERT INTO app_modules (id, name, category, sort_order, enabled) 
-                     VALUES (?, ?, ?, ?, ?)'
-                );
-                $insert->execute([
-                    $id,
-                    $module['name'] ?? $id,
-                    $module['category'] ?? null,
-                    $module['order'] ?? 0,
-                    in_array($id, $enabledModules, true) ? 1 : 0,
-                ]);
+            if (!$updated) {
+                try {
+                    $insert = $pdo->prepare($insertSql);
+                    $insert->execute([$id, $name, $category, $sortOrder, $isEnabled]);
+                } catch (Throwable $e) {
+                    // fallback na starší schéma bez category/sort_order
+                    if (!$fallbackUsed) {
+                        $fallbackUsed = true;
+                    }
+                    $insert = $pdo->prepare('INSERT INTO app_modules (id, name, enabled) VALUES (?, ?, ?)');
+                    $insert->execute([$id, $name, $isEnabled]);
+                }
             }
         }
 

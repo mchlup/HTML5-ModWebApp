@@ -72,7 +72,7 @@ export function getRuntimeConfig() {
 }
 
 export function setRuntimeConfig(cfg) {
-  return persistRuntimeConfig(cfg);
+  return persistRuntimeConfig({ ...runtimeConfig, ...(cfg || {}) });
 }
 
 export async function loadRuntimeConfig(options = {}) {
@@ -89,10 +89,12 @@ export async function loadRuntimeConfig(options = {}) {
       throw new Error(data.message || "Načtení konfigurace selhalo");
     }
     const modules = Array.isArray(data?.modules) ? data.modules : [];
-    const enabledFromResponse = Array.isArray(data?.enabledModules) ? data.enabledModules : null;
+    const enabledFromResponse = Array.isArray(data?.enabledModules)
+      ? data.enabledModules
+      : null;
     const enabledModules =
-      enabledFromResponse && enabledFromResponse.length
-        ? enabledFromResponse
+      enabledFromResponse !== null
+        ? enabledFromResponse.filter(Boolean)
         : modules.map((m) => m.id).filter(Boolean);
     const permissions = data?.permissions && typeof data.permissions === "object" ? data.permissions : {};
     return persistRuntimeConfig({
@@ -161,7 +163,15 @@ export async function loadModuleConfig(moduleName) {
 }
 
 export async function saveRuntimeConfig(config) {
-  const payload = Array.isArray(config?.enabledModules) ? config.enabledModules : [];
+  const payload = Array.isArray(config?.enabledModules)
+    ? Array.from(
+        new Set(
+          config.enabledModules
+            .map((id) => (typeof id === "string" ? id.trim() : String(id || "")))
+            .filter(Boolean)
+        )
+      )
+    : [];
   try {
     const res = await requestWithCsrf(MODULES_ENDPOINT, {
       method: "POST",
