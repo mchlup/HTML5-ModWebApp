@@ -58,7 +58,7 @@ function getInitialCounts() {
   };
 }
 
-function renderCrm(container) {
+function renderCrm(container, { currentSubId } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'dashboard crm-module';
 
@@ -79,12 +79,14 @@ function renderCrm(container) {
   nav.className = 'tab-nav';
   const tabs = [
     { id: 'suroviny', label: labels.materials },
-    { id: 'dodavatele', label: labels.suppliers },
+    { id: 'dodavatele', label: labels.suppliers, description: labels.suppliersIntro },
     { id: 'polotovary', label: labels.intermediates },
     { id: 'receptury', label: labels.recipes },
     { id: 'zakazky', label: labels.orders },
   ];
-  let activeTab = 'suroviny';
+  const moduleId = 'crm';
+  const tabIds = tabs.map((t) => t.id);
+  let activeTab = tabIds.includes(currentSubId) ? currentSubId : 'suroviny';
 
   tabs.forEach((tab) => {
     const btn = document.createElement('button');
@@ -92,12 +94,19 @@ function renderCrm(container) {
     btn.textContent = tab.label;
     btn.dataset.tab = tab.id;
     btn.className = tab.id === activeTab ? 'tab active' : 'tab';
+    if (tab.description) {
+      btn.title = tab.description;
+    }
     btn.addEventListener('click', () => {
-      activeTab = tab.id;
-      nav.querySelectorAll('button').forEach((b) => {
-        b.classList.toggle('active', b.dataset.tab === activeTab);
-      });
-      renderActiveTab();
+      if (window.location.hash !== `#/${moduleId}/${tab.id}`) {
+        window.location.hash = `#/${moduleId}/${tab.id}`;
+      } else {
+        activeTab = tab.id;
+        nav.querySelectorAll('button').forEach((b) => {
+          b.classList.toggle('active', b.dataset.tab === activeTab);
+        });
+        renderActiveTab();
+      }
     });
     nav.appendChild(btn);
   });
@@ -164,10 +173,11 @@ export default {
   id: 'crm',
   meta: {
     iconClass: 'fa-solid fa-vial-circle-check',
+    description: labels.subtitle,
     labels: { cs: labels.title },
     navItems: [
       { id: 'suroviny', labels: { cs: labels.materials } },
-      { id: 'dodavatele', labels: { cs: labels.suppliers } },
+      { id: 'dodavatele', labels: { cs: labels.suppliers }, description: labels.suppliersIntro },
       { id: 'polotovary', labels: { cs: labels.intermediates } },
       { id: 'receptury', labels: { cs: labels.recipes } },
       { id: 'zakazky', labels: { cs: labels.orders } },
