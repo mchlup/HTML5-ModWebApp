@@ -8,16 +8,12 @@
   "defaultEnabledModules": [
     "dashboard",
     "config",
-    "crm",
-    "erp"
+    "crm"
   ],
   "modules": {
     "crm": {
       "name": "CRM výroby nátěrových hmot",
       "defaultCity": "Praha"
-    },
-    "erp": {
-      "defaultCurrency": "CZK"
     },
     "config": {},
     "dashboard": {},

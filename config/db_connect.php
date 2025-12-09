@@ -1,7 +1,13 @@
 <?php
 // Funkce pro získání PDO připojení k databázi pomocí konfigurace uložené po provedení nastavení
+// Cestu ke konfiguraci lze přepsat konstantou DB_CONFIG_PATH nebo proměnnou prostředí DB_CONFIG_PATH
+if (!defined('DB_CONFIG_PATH')) {
+    $envPath = getenv('DB_CONFIG_PATH');
+    define('DB_CONFIG_PATH', $envPath !== false ? $envPath : __DIR__ . '/db_config.json');
+}
+
 function getDbConnection(): PDO {
-    $configPath = __DIR__ . '/db_config.json';
+    $configPath = DB_CONFIG_PATH;
     if (!file_exists($configPath)) {
         throw new RuntimeException('Konfigurace databáze není nastavena.');
     }

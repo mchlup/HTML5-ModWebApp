@@ -84,10 +84,47 @@ function crmMaterialsHandleGet($pdo)
         ));
     }
 
+    $page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
+    $pageSize = isset($_GET['pageSize']) ? max(1, (int) $_GET['pageSize']) : 20;
+    $search = isset($_GET['search']) ? trim((string) $_GET['search']) : '';
+    $sortBy = isset($_GET['sortBy']) ? (string) $_GET['sortBy'] : 'name';
+    $sortDir = strtolower((string) ($_GET['sortDir'] ?? 'asc')) === 'desc' ? 'DESC' : 'ASC';
+
+    $allowedSort = array(
+        'code' => 'code',
+        'name' => 'name',
+        'supplier' => 'supplier',
+        'price' => 'price',
+        'createdAt' => 'created_at',
+    );
+    $orderBy = isset($allowedSort[$sortBy]) ? $allowedSort[$sortBy] : 'name';
+
+    $conditions = array();
+    $params = array();
+    if ($search !== '') {
+        $conditions[] = '(code LIKE :q OR name LIKE :q OR supplier LIKE :q)';
+        $params[':q'] = '%' . $search . '%';
+    }
+
+    $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+    $countSql = 'SELECT COUNT(*) FROM crm_materials ' . $where;
+    $countStmt = $pdo->prepare($countSql);
+    foreach ($params as $key => $val) {
+        $countStmt->bindValue($key, $val, PDO::PARAM_STR);
+    }
+    $countStmt->execute();
+    $total = (int) $countStmt->fetchColumn();
+
     $sql = 'SELECT id, code, name, supplier, price, density, solids, okp, oil, voc, safety, note, created_at
-            FROM crm_materials
-            ORDER BY name';
-    $stmt = $pdo->query($sql);
+            FROM crm_materials ' . $where . ' ORDER BY ' . $orderBy . ' ' . $sortDir . ' LIMIT :limit OFFSET :offset';
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $key => $val) {
+        $stmt->bindValue($key, $val, PDO::PARAM_STR);
+    }
+    $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', ($page - 1) * $pageSize, PDO::PARAM_INT);
+    $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $materials = array();
@@ -98,6 +135,12 @@ function crmMaterialsHandleGet($pdo)
     jsonResponse(array(
         'success'   => true,
         'materials' => $materials,
+        'data'      => array(
+            'items'      => $materials,
+            'page'       => $page,
+            'pageSize'   => $pageSize,
+            'totalCount' => $total,
+        ),
     ));
 }
 
