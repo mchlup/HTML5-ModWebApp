@@ -11,7 +11,7 @@ if (!session_start()) {
 }
 
 if (empty($_SESSION['username'])) {
-    jsonResponse(['success' => false, 'message' => 'Session neexistuje.'], 401);
+    jsonResponse(['success' => false, 'message' => 'Session neexistuje.'], 200);
 }
 
 $appDefinition = loadAppDefinition();
@@ -92,4 +92,4 @@ if (($userData['role'] ?? '') === 'super-admin' && ($userData['id'] ?? 1) === 0)
     }
 }
 
-jsonResponse(['success' => false, 'message' => 'Session není platná.'], 503);
+jsonResponse(['success' => false, 'message' => 'Session není platná.'], 200);

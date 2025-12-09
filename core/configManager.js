@@ -3,7 +3,7 @@ import { get as getStore, set as setStore } from "./storageManager.js";
 import { showToast } from "./uiService.js";
 import { requestWithCsrf } from "./authService.js";
 
-const APP_CONFIG_URL = "./config/app.json";
+const APP_CONFIG_URL = "./config/app.php";
 const MODULES_ENDPOINT = "./config/modules.php";
 
 let runtimeConfig = {
