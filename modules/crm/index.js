@@ -1,5 +1,6 @@
 import labels from './lang_cs.js';
 import { showToast } from '../../core/uiService.js';
+import { requestWithCsrf } from '../../core/authService.js';
 
 const STORAGE_KEYS = {
   rawMaterials: 'crm_raw_materials',
@@ -7,6 +8,39 @@ const STORAGE_KEYS = {
   recipes: 'crm_recipes',
   orders: 'crm_orders',
 };
+
+const MATERIALS_API = './modules/crm/api/materials.php';
+
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, { credentials: 'same-origin', ...options });
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || 'Operace selhala');
+  }
+  return data;
+}
+
+async function apiPost(url, payload) {
+  const res = await requestWithCsrf(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || 'Operace selhala');
+  }
+  return data;
+}
+
+async function apiDelete(url) {
+  const res = await requestWithCsrf(url, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    throw new Error(data.message || 'Operace selhala');
+  }
+  return data;
+}
 
 function loadList(key) {
   try {
@@ -17,17 +51,11 @@ function loadList(key) {
   }
 }
 
-function saveList(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (err) {
-    console.warn('Uložení do localStorage selhalo', err);
-    return false;
-  }
+function saveList(key, list) {
+  localStorage.setItem(key, JSON.stringify(list));
 }
 
-function createCard(titleText, description) {
+function createCard(titleText, subtitleText) {
   const card = document.createElement('div');
   card.className = 'card';
   if (titleText) {
@@ -35,50 +63,27 @@ function createCard(titleText, description) {
     title.textContent = titleText;
     card.appendChild(title);
   }
-  if (description) {
-    const desc = document.createElement('p');
-    desc.className = 'muted';
-    desc.textContent = description;
-    card.appendChild(desc);
+  if (subtitleText) {
+    const subtitle = document.createElement('p');
+    subtitle.className = 'muted';
+    subtitle.textContent = subtitleText;
+    card.appendChild(subtitle);
   }
   return card;
 }
 
-function createBadge(text, tone = 'info') {
-  const badge = document.createElement('span');
-  badge.className = 'badge';
-  badge.style.background = tone === 'success' ? '#065f46' : tone === 'danger' ? '#7f1d1d' : '#1f2937';
-  badge.style.color = '#f8fafc';
-  badge.textContent = text;
-  return badge;
+function createPill(text, type = 'default') {
+  const span = document.createElement('span');
+  span.className = `pill pill-${type}`;
+  span.textContent = text;
+  return span;
 }
 
-function createPill(text) {
-  const pill = document.createElement('span');
-  pill.className = 'pill';
-  pill.textContent = text;
-  return pill;
-}
-
-function buildKpis(materials, intermediates, recipes, orders) {
-  const wrap = document.createElement('div');
-  wrap.className = 'dashboard-widgets';
-
-  const kpiData = [
-    { label: 'Suroviny', value: materials.length },
-    { label: 'Polotovary', value: intermediates.length },
-    { label: 'Receptury', value: recipes.length },
-    { label: 'Zakázky', value: orders.length },
-  ];
-
-  kpiData.forEach((kpi) => {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `<div class="muted">${kpi.label}</div><div class="strong" style="font-size:2rem;">${kpi.value}</div>`;
-    wrap.appendChild(card);
-  });
-
-  return wrap;
+function createBadge(text, type = 'default') {
+  const span = document.createElement('span');
+  span.className = `badge badge-${type}`;
+  span.textContent = text;
+  return span;
 }
 
 function renderEmptyState(card, message) {
@@ -88,94 +93,382 @@ function renderEmptyState(card, message) {
   card.appendChild(empty);
 }
 
+/**
+ * SUROVINY – DB přes MATERIALS_API
+ * - responzivní rozložení polí
+ * - CRUD včetně editace
+ * - filtrování a scrollovatelný seznam pro větší počet záznamů
+ */
 function renderMaterials(container) {
-  const materials = loadList(STORAGE_KEYS.rawMaterials);
-
   const grid = document.createElement('div');
-  grid.className = 'form-grid';
+  grid.className = 'form-grid materials-layout';
 
-  const formCard = createCard(labels.addMaterial, 'Zadejte parametry suroviny a uložte je pro další použití.');
+  const formCard = createCard(
+    labels.addMaterial,
+    'Zadejte parametry suroviny a uložte ji – bez uložených surovin nelze pokračovat v polotovarech a recepturách.'
+  );
+
   const form = document.createElement('form');
-  form.className = 'form-grid';
+  form.className = 'form-grid materials-form';
+
+  // základní grid formuláře (jeden sloupec, hezké mezery)
+  form.style.display = 'grid';
+  form.style.gridTemplateColumns = '1fr';
+  form.style.rowGap = '0.75rem';
+  form.style.columnGap = '0.75rem';
+
+  const rowStyle =
+    'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;align-items:flex-end;';
+
   form.innerHTML = `
-    <label>Název suroviny<input name="name" required placeholder="Disperze akrylátu" /></label>
-    <label>Kód/Dodací číslo<input name="code" required placeholder="ACR-245" /></label>
-    <label>Dodavatel<input name="supplier" placeholder="ABC Pigments" /></label>
-    <label>Cena / kg<input name="price" type="number" min="0" step="0.01" placeholder="120" /></label>
-    <label>Hustota (g/cm³)<input name="density" type="number" min="0" step="0.01" placeholder="1.05" /></label>
-    <label>VOC (g/l)<input name="voc" type="number" min="0" step="0.1" placeholder="15" /></label>
-    <label>Nebezpečnost / SDS<input name="safety" placeholder="H315, H319" /></label>
-    <label>Poznámka<textarea name="note" rows="2" placeholder="Stabilní do 25 °C, sklad ve stínu."></textarea></label>
+    <div class="form-grid" style="${rowStyle}">
+      <label>
+        Název suroviny
+        <input name="name" required placeholder="Disperze akrylátu" />
+      </label>
+      <label>
+        Kód / Dodací číslo
+        <input name="code" required placeholder="ACR-245" />
+      </label>
+    </div>
+
+    <div class="form-grid" style="${rowStyle}">
+      <label>
+        Dodavatel
+        <input name="supplier" placeholder="ABC Pigments" />
+      </label>
+      <label>
+        Cena / kg
+        <input name="price" type="number" min="0" step="0.01" placeholder="120" />
+      </label>
+    </div>
+
+    <div class="form-grid" style="${rowStyle}">
+      <label>
+        Hustota (g/cm³)
+        <input name="density" type="number" min="0" step="0.01" placeholder="1.05" />
+      </label>
+      <label>
+        Sušina (%)
+        <input name="solids" type="number" min="0" max="100" step="0.1" placeholder="55" />
+      </label>
+    </div>
+
+    <div class="form-grid" style="${rowStyle}">
+      <label>
+        OKP / kategorie
+        <input name="okp" placeholder="např. A(i), B(e), VOC kat." />
+      </label>
+      <label>
+        Olej / olejová fáze
+        <input name="oil" placeholder="lněný, sójový, alkydový..." />
+      </label>
+    </div>
+
+    <div class="form-grid" style="${rowStyle}">
+      <label>
+        VOC (g/l)
+        <input name="voc" type="number" min="0" step="0.1" placeholder="15" />
+      </label>
+      <label>
+        Nebezpečnost / SDS
+        <input name="safety" placeholder="H315, H319" />
+      </label>
+    </div>
+
+    <label>
+      Poznámka
+      <textarea name="note" rows="2" placeholder="Stabilní do 25 °C, sklad ve stínu."></textarea>
+    </label>
+
     <div class="form-actions">
-      <button type="submit">Uložit surovinu</button>
+      <button type="submit" data-role="save">Uložit surovinu</button>
+      <button type="button" data-role="cancel-edit" class="secondary" style="display:none">Zrušit úpravy</button>
     </div>
   `;
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fd = new FormData(form);
-    const entry = {
-      id: crypto.randomUUID(),
-      name: fd.get('name'),
-      code: fd.get('code'),
-      supplier: fd.get('supplier'),
-      price: parseFloat(fd.get('price')) || null,
-      density: parseFloat(fd.get('density')) || null,
-      voc: parseFloat(fd.get('voc')) || null,
-      safety: fd.get('safety'),
-      note: fd.get('note'),
-      createdAt: new Date().toISOString(),
-    };
-    const next = [...materials, entry];
-    saveList(STORAGE_KEYS.rawMaterials, next);
-    showToast('Surovina uložena.');
-    renderMaterials(container);
-  });
   formCard.appendChild(form);
   grid.appendChild(formCard);
 
-  const listCard = createCard('Evidence surovin', 'Přehled uložených surovin a jejich parametrů.');
-  if (!materials.length) {
-    renderEmptyState(listCard, labels.emptyMaterials);
-  } else {
-    const table = document.createElement('table');
-    table.className = 'striped';
-    const head = document.createElement('tr');
-    head.innerHTML = '<th>Kód</th><th>Název</th><th>Dodavatel</th><th>Cena</th><th>Parametry</th><th></th>';
-    table.appendChild(head);
+  const listCard = createCard(
+    'Evidence surovin',
+    'Přehled surovin, které lze dále použít v polotovarech, recepturách a zakázkách.'
+  );
 
-    materials.forEach((m) => {
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${m.code || '-'}</td>
-        <td>${m.name}</td>
-        <td>${m.supplier || '-'}</td>
-        <td>${m.price ? `${m.price.toFixed(2)} Kč/kg` : '—'}</td>
-        <td>
-          <div class="pill">Hustota: ${m.density || '–'}</div>
-          <div class="pill">VOC: ${m.voc || '–'} g/l</div>
-          ${m.safety ? `<div class="pill warning">${m.safety}</div>` : ''}
-        </td>
-        <td class="form-actions">
-          <button type="button" class="danger" data-id="${m.id}">${labels.delete}</button>
-        </td>
-      `;
-      row.querySelector('button')?.addEventListener('click', () => {
-        const next = materials.filter((item) => item.id !== m.id);
-        saveList(STORAGE_KEYS.rawMaterials, next);
-        showToast('Surovina odstraněna.');
-        renderMaterials(container);
-      });
-      table.appendChild(row);
-    });
+  // toolbar nad tabulkou – filtr + počet záznamů
+  const toolbar = document.createElement('div');
+  toolbar.className = 'table-toolbar';
+  toolbar.style.marginBottom = '0.75rem';
+  toolbar.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center;justify-content:space-between;">
+      <label style="flex:1 1 220px;max-width:420px;">
+        <span class="muted" style="display:block;font-size:0.85rem;margin-bottom:0.15rem;">Filtrovat suroviny</span>
+        <input type="search" name="materialsFilter" placeholder="Hledat podle kódu, názvu nebo dodavatele" />
+      </label>
+      <span class="muted materials-count" style="white-space:nowrap;"></span>
+    </div>
+  `;
+  listCard.appendChild(toolbar);
 
-    listCard.appendChild(table);
-  }
+  const table = document.createElement('table');
+  table.className = 'striped materials-table';
+  const head = document.createElement('thead');
+  head.innerHTML = `
+    <tr>
+      <th>Kód</th>
+      <th>Název</th>
+      <th>Dodavatel</th>
+      <th>Cena</th>
+      <th>Parametry</th>
+      <th style="width: 1%; white-space: nowrap;"></th>
+    </tr>
+  `;
+  const tbody = document.createElement('tbody');
+  table.appendChild(head);
+  table.appendChild(tbody);
+
+  // scrollovatelný wrapper pro tabulku
+  const tableWrapper = document.createElement('div');
+  tableWrapper.className = 'table-scroll';
+  tableWrapper.style.maxHeight = '380px';
+  tableWrapper.style.overflowY = 'auto';
+  tableWrapper.style.overflowX = 'hidden';
+  tableWrapper.appendChild(table);
+
+  listCard.appendChild(tableWrapper);
   grid.appendChild(listCard);
 
   container.innerHTML = '';
   container.appendChild(grid);
+
+  // --- stav pro editaci & filtrování ---
+  let materials = [];
+  let editingId = null;
+
+  const submitBtn = form.querySelector('button[data-role="save"]');
+  const cancelEditBtn = form.querySelector('button[data-role="cancel-edit"]');
+  const filterInput = toolbar.querySelector('input[name="materialsFilter"]');
+  const countLabel = toolbar.querySelector('.materials-count');
+
+  const nameInput = form.elements.namedItem('name');
+  const codeInput = form.elements.namedItem('code');
+  const supplierInput = form.elements.namedItem('supplier');
+  const priceInput = form.elements.namedItem('price');
+  const densityInput = form.elements.namedItem('density');
+  const solidsInput = form.elements.namedItem('solids');
+  const okpInput = form.elements.namedItem('okp');
+  const oilInput = form.elements.namedItem('oil');
+  const vocInput = form.elements.namedItem('voc');
+  const safetyInput = form.elements.namedItem('safety');
+  const noteInput = form.elements.namedItem('note');
+
+  function resetFormState() {
+    form.reset();
+    editingId = null;
+    submitBtn.textContent = 'Uložit surovinu';
+    cancelEditBtn.style.display = 'none';
+  }
+
+  function fillFormFromMaterial(material) {
+    if (!material) return;
+
+    nameInput.value = material.name || '';
+    codeInput.value = material.code || '';
+    supplierInput.value = material.supplier || '';
+    priceInput.value = material.price != null ? material.price : '';
+    densityInput.value = material.density != null ? material.density : '';
+    solidsInput.value = material.solids != null ? material.solids : '';
+    okpInput.value = material.okp || '';
+    oilInput.value = material.oil || '';
+    vocInput.value = material.voc != null ? material.voc : '';
+    safetyInput.value = material.safety || '';
+    noteInput.value = material.note || '';
+
+    editingId = material.id;
+    submitBtn.textContent = 'Uložit změny';
+    cancelEditBtn.style.display = '';
+  }
+
+  function renderRows(source) {
+    if (!Array.isArray(source) || source.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6">${labels.emptyMaterials}</td></tr>`;
+      countLabel.textContent = materials.length
+        ? `0 z ${materials.length} položek`
+        : '0 položek';
+      return;
+    }
+
+    tbody.innerHTML = '';
+
+    source.forEach((m) => {
+      const tr = document.createElement('tr');
+      const priceText =
+        typeof m.price === 'number'
+          ? `${m.price.toFixed(2)} Kč/kg`
+          : m.price
+          ? m.price
+          : '—';
+      const densityText = m.density != null ? m.density : '–';
+      const solidsText = m.solids != null ? `${m.solids} %` : '–';
+      const vocText = m.voc != null ? m.voc : '–';
+
+      let paramsHtml = '<div class="materials-params" style="display:flex;flex-direction:column;gap:0.15rem;font-size:0.9em;">';
+      paramsHtml += `<div>Hustota: ${densityText}</div>`;
+      paramsHtml += `<div>Sušina: ${solidsText}</div>`;
+      paramsHtml += `<div>VOC: ${vocText} g/l</div>`;
+      if (m.okp) {
+        paramsHtml += `<div>OKP / kategorie: ${m.okp}</div>`;
+      }
+      if (m.oil) {
+        paramsHtml += `<div>Olej / olejová fáze: ${m.oil}</div>`;
+      }
+      if (m.safety) {
+        paramsHtml += `<div>Nebezpečnost / SDS: ${m.safety}</div>`;
+      }
+      paramsHtml += '</div>';
+
+      tr.innerHTML = `
+        <td>${m.code || '-'}</td>
+        <td>${m.name}</td>
+        <td>${m.supplier || '-'}</td>
+        <td>${priceText}</td>
+        <td>${paramsHtml}</td>
+        <td class="form-actions" style="white-space: nowrap;"></td>
+      `;
+
+      const actionsCell = tr.querySelector('td.form-actions');
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'secondary';
+      editBtn.textContent = 'Upravit';
+      editBtn.addEventListener('click', () => {
+        fillFormFromMaterial(m);
+        formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'danger';
+      delBtn.textContent = labels.delete;
+      delBtn.addEventListener('click', async () => {
+        if (!confirm('Opravdu odstranit tuto surovinu?')) return;
+        try {
+          await apiDelete(`${MATERIALS_API}?id=${encodeURIComponent(m.id)}`);
+          showToast('Surovina odstraněna.');
+          if (editingId === m.id) {
+            resetFormState();
+          }
+          await reload();
+        } catch (err) {
+          console.error(err);
+          showToast(err.message || 'Odstranění suroviny selhalo.', { type: 'error' });
+        }
+      });
+
+      actionsCell.appendChild(editBtn);
+      actionsCell.appendChild(delBtn);
+
+      tbody.appendChild(tr);
+    });
+
+    if (source.length === materials.length) {
+      countLabel.textContent = `${materials.length} položek`;
+    } else {
+      countLabel.textContent = `${source.length} z ${materials.length} položek`;
+    }
+  }
+
+  function applyFilter() {
+    const term = (filterInput.value || '').trim().toLowerCase();
+    if (!term) {
+      renderRows(materials);
+      return;
+    }
+    const filtered = materials.filter((m) => {
+      const code = (m.code || '').toLowerCase();
+      const name = (m.name || '').toLowerCase();
+      const supplier = (m.supplier || '').toLowerCase();
+      return (
+        code.includes(term) ||
+        name.includes(term) ||
+        supplier.includes(term)
+      );
+    });
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6">Žádná surovina neodpovídá filtru.</td></tr>';
+      countLabel.textContent = `0 z ${materials.length} položek`;
+      return;
+    }
+    renderRows(filtered);
+  }
+
+  async function reload() {
+    tbody.innerHTML = '<tr><td colspan="6">Načítám…</td></tr>';
+    countLabel.textContent = '';
+    try {
+      const data = await apiFetch(MATERIALS_API);
+      materials = data.materials || data.data || [];
+      if (!materials.length) {
+        renderRows([]);
+        return;
+      }
+      applyFilter(); // použij aktuální filtr nad čerstvě načtenými daty
+    } catch (err) {
+      console.error(err);
+      tbody.innerHTML = '<tr><td colspan="6">Chyba při načítání surovin.</td></tr>';
+      countLabel.textContent = '';
+      showToast(err.message || 'Chyba při načítání surovin.', { type: 'error' });
+    }
+  }
+
+  filterInput.addEventListener('input', () => {
+    applyFilter();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const payload = {
+      id: editingId || undefined,
+      code: (fd.get('code') || '').trim(),
+      name: (fd.get('name') || '').trim(),
+      supplier: (fd.get('supplier') || '').trim(),
+      price: fd.get('price') !== '' ? Number(fd.get('price')) : null,
+      density: fd.get('density') !== '' ? Number(fd.get('density')) : null,
+      solids: fd.get('solids') !== '' ? Number(fd.get('solids')) : null,
+      okp: (fd.get('okp') || '').trim(),
+      oil: (fd.get('oil') || '').trim(),
+      voc: fd.get('voc') !== '' ? Number(fd.get('voc')) : null,
+      safety: (fd.get('safety') || '').trim(),
+      note: (fd.get('note') || '').trim(),
+    };
+
+    if (!payload.code || !payload.name) {
+      showToast('Kód a název suroviny jsou povinné.', { type: 'error' });
+      return;
+    }
+
+    try {
+      await apiPost(MATERIALS_API, payload);
+      showToast(editingId ? 'Změny suroviny byly uloženy.' : 'Surovina uložena.');
+      resetFormState();
+      await reload();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Uložení suroviny selhalo.', { type: 'error' });
+    }
+  });
+
+  cancelEditBtn.addEventListener('click', () => {
+    resetFormState();
+  });
+
+  reload();
 }
 
+/**
+ * POLOTOVARY – zatím localStorage, navážeme na DB v dalším kroku
+ */
 function renderIntermediates(container) {
   const materials = loadList(STORAGE_KEYS.rawMaterials);
   const intermediates = loadList(STORAGE_KEYS.intermediates);
@@ -183,7 +476,10 @@ function renderIntermediates(container) {
   const grid = document.createElement('div');
   grid.className = 'form-grid';
 
-  const formCard = createCard(labels.addIntermediate, 'Vytvořte polotovary z již evidovaných surovin.');
+  const formCard = createCard(
+    labels.addIntermediate,
+    'Vytvořte polotovary z již evidovaných surovin.'
+  );
   if (!materials.length) {
     renderEmptyState(formCard, labels.emptyIntermediates);
   } else {
@@ -192,7 +488,13 @@ function renderIntermediates(container) {
     form.innerHTML = `
       <label>Název polotovaru<input name="name" required placeholder="Pigmentová pasta" /></label>
       <label>Kód / dávka<input name="code" placeholder="PIG-01" /></label>
-      <label>Účel použití<input name="purpose" placeholder="Báze pro tónování" /></label>
+      <label>Základ
+        <select name="base">
+          <option value="">(nezadán)</option>
+          <option value="water">Vodou ředitelný</option>
+          <option value="solvent">Rozpouštědlový</option>
+        </select>
+      </label>
       <label>Sušina (%)<input name="solids" type="number" step="0.1" min="0" max="100" placeholder="55" /></label>
       <label>Viskozita (mPa·s)<input name="viscosity" type="number" step="1" min="0" placeholder="750" /></label>
     `;
@@ -234,8 +536,9 @@ function renderIntermediates(container) {
       const share = document.createElement('input');
       share.type = 'number';
       share.min = '0';
+      share.max = '100';
       share.step = '0.1';
-      share.placeholder = 'Podíl %';
+      share.placeholder = 'Podíl (%)';
       if (prefill.share) share.value = prefill.share;
 
       const remove = document.createElement('button');
@@ -274,7 +577,7 @@ function renderIntermediates(container) {
         .filter((c) => c.materialId);
 
       if (!composition.length) {
-        showToast('Přidejte alespoň jednu surovinu.', { type: 'error' });
+        showToast('Přidejte alespoň jednu surovinu do složení.', { type: 'error' });
         return;
       }
 
@@ -282,7 +585,7 @@ function renderIntermediates(container) {
         id: crypto.randomUUID(),
         name: fd.get('name'),
         code: fd.get('code'),
-        purpose: fd.get('purpose'),
+        base: fd.get('base'),
         solids: parseFloat(fd.get('solids')) || null,
         viscosity: parseFloat(fd.get('viscosity')) || null,
         composition,
@@ -300,34 +603,34 @@ function renderIntermediates(container) {
 
   const listCard = createCard('Přehled polotovarů', 'Receptury, které využívají uložené suroviny.');
   if (!intermediates.length) {
-    renderEmptyState(listCard, 'Zatím nejsou žádné polotovary.');
+    renderEmptyState(listCard, 'Zatím nejsou evidovány žádné polotovary.');
   } else {
-    intermediates.forEach((item) => {
+    const list = document.createElement('div');
+    list.className = 'list';
+
+    intermediates.forEach((i) => {
       const block = document.createElement('div');
       block.className = 'list-row';
 
       const header = document.createElement('div');
       header.className = 'flex-row';
       header.style.justifyContent = 'space-between';
-      header.innerHTML = `<div><div class="strong">${item.name}</div><div class="muted">${item.code || ''}</div></div>`;
-      const tagRow = document.createElement('div');
-      tagRow.className = 'pill-row';
-      if (item.solids) tagRow.appendChild(createPill(`Sušina ${item.solids}%`));
-      if (item.viscosity) tagRow.appendChild(createPill(`Viskozita ${item.viscosity} mPa·s`));
-      if (item.purpose) tagRow.appendChild(createBadge(item.purpose));
-      header.appendChild(tagRow);
+      header.innerHTML = `<div><div class="strong">${i.name}</div><div class="muted">${i.code || ''}</div></div>`;
+      const tags = document.createElement('div');
+      tags.className = 'pill-row';
+      if (i.base === 'water') tags.appendChild(createPill('Vodou ředitelný'));
+      if (i.base === 'solvent') tags.appendChild(createPill('Rozpouštědlový'));
+      if (i.solids) tags.appendChild(createPill(`Sušina ${i.solids}%`));
+      if (i.viscosity) tags.appendChild(createPill(`Viskozita ${i.viscosity} mPa·s`));
+      header.appendChild(tags);
       block.appendChild(header);
 
-      const compList = document.createElement('div');
-      compList.className = 'muted';
-      compList.style.display = 'flex';
-      compList.style.flexWrap = 'wrap';
-      compList.style.gap = '0.5rem';
-      item.composition.forEach((c) => {
-        const mat = materials.find((m) => m.id === c.materialId);
-        compList.appendChild(createPill(`${mat ? mat.name : 'Surovina'} (${c.share}%)`));
-      });
-      block.appendChild(compList);
+      if (i.composition?.length) {
+        const comp = document.createElement('div');
+        comp.className = 'muted';
+        comp.textContent = `${i.composition.length}× surovina ve složení`;
+        block.appendChild(comp);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'form-actions';
@@ -336,7 +639,7 @@ function renderIntermediates(container) {
       del.className = 'danger';
       del.textContent = labels.delete;
       del.addEventListener('click', () => {
-        const next = intermediates.filter((entry) => entry.id !== item.id);
+        const next = intermediates.filter((item) => item.id !== i.id);
         saveList(STORAGE_KEYS.intermediates, next);
         showToast('Polotovar odstraněn.');
         renderIntermediates(container);
@@ -344,8 +647,10 @@ function renderIntermediates(container) {
       actions.appendChild(del);
       block.appendChild(actions);
 
-      listCard.appendChild(block);
+      list.appendChild(block);
     });
+
+    listCard.appendChild(list);
   }
   grid.appendChild(listCard);
 
@@ -353,6 +658,9 @@ function renderIntermediates(container) {
   container.appendChild(grid);
 }
 
+/**
+ * RECEPTURY – zatím localStorage
+ */
 function renderRecipes(container) {
   const materials = loadList(STORAGE_KEYS.rawMaterials);
   const intermediates = loadList(STORAGE_KEYS.intermediates);
@@ -361,22 +669,33 @@ function renderRecipes(container) {
   const grid = document.createElement('div');
   grid.className = 'form-grid';
 
-  const formCard = createCard(labels.addRecipe, 'Spojte polotovary a suroviny do finální receptury.');
+  const formCard = createCard(
+    labels.addRecipe,
+    'Spojte polotovary a suroviny do finální receptury.'
+  );
   if (!materials.length && !intermediates.length) {
     renderEmptyState(formCard, labels.emptyRecipes);
   } else {
     const options = [
-      ...intermediates.map((i) => ({ value: `intermediate:${i.id}`, label: `Polotovar • ${i.name}`, type: 'intermediate' })),
-      ...materials.map((m) => ({ value: `material:${m.id}`, label: `Surovina • ${m.name}`, type: 'material' })),
+      ...intermediates.map((i) => ({
+        value: `intermediate:${i.id}`,
+        label: `Polotovar • ${i.name}`,
+        type: 'intermediate',
+      })),
+      ...materials.map((m) => ({
+        value: `material:${m.id}`,
+        label: `Surovina • ${m.name}`,
+        type: 'material',
+      })),
     ];
 
     const form = document.createElement('form');
     form.className = 'form-grid';
     form.innerHTML = `
-      <label>Název receptury<input name="name" required placeholder="Fasádní barva PREMIUM" /></label>
-      <label>Odstín / kód<input name="shade" placeholder="RAL 9016" /></label>
-      <label>Požadovaný lesk<input name="gloss" placeholder="20–30 GU" /></label>
-      <label>Cílové množství (kg)<input name="batchSize" type="number" min="1" step="1" placeholder="100" /></label>
+      <label>Název receptury<input name="name" required placeholder="Fasádní barva akrylátová" /></label>
+      <label>Odstín<input name="shade" placeholder="RAL 9010" /></label>
+      <label>Lesk<input name="gloss" placeholder="mat / polomat / lesk" /></label>
+      <label>Velikost dávky (kg)<input name="batchSize" type="number" min="1" step="1" placeholder="100" /></label>
       <label>Specifikace použití<textarea name="note" rows="2" placeholder="Exteriérový akrylát, vysoká odolnost UV."></textarea></label>
     `;
 
@@ -481,10 +800,13 @@ function renderRecipes(container) {
   }
   grid.appendChild(formCard);
 
-  const listCard = createCard('Receptury', 'Přehled finálních receptur určených pro zákazníky.');
+  const listCard = createCard('Receptury', 'Finální kombinace surovin a polotovarů.');
   if (!recipes.length) {
-    renderEmptyState(listCard, 'Zatím nejsou žádné receptury.');
+    renderEmptyState(listCard, 'Zatím nejsou evidovány žádné receptury.');
   } else {
+    const list = document.createElement('div');
+    list.className = 'list';
+
     recipes.forEach((rec) => {
       const block = document.createElement('div');
       block.className = 'list-row';
@@ -502,24 +824,11 @@ function renderRecipes(container) {
 
       const compWrap = document.createElement('div');
       compWrap.className = 'muted';
-      compWrap.style.display = 'flex';
-      compWrap.style.flexWrap = 'wrap';
-      compWrap.style.gap = '0.5rem';
-
-      rec.composition.forEach((c) => {
-        const [type, id] = c.value.split(':');
-        if (type === 'intermediate') {
-          const match = intermediates.find((i) => i.id === id);
-          compWrap.appendChild(createPill(`${match ? match.name : 'Polotovar'} (${c.amount} kg)`));
-        } else {
-          const mat = materials.find((m) => m.id === id);
-          compWrap.appendChild(createPill(`${mat ? mat.name : 'Surovina'} (${c.amount} kg)`));
-        }
-      });
+      compWrap.textContent = `Složení: ${rec.composition.length} položek`;
       block.appendChild(compWrap);
 
       if (rec.note) {
-        const note = document.createElement('p');
+        const note = document.createElement('div');
         note.className = 'muted';
         note.textContent = rec.note;
         block.appendChild(note);
@@ -540,8 +849,10 @@ function renderRecipes(container) {
       actions.appendChild(del);
       block.appendChild(actions);
 
-      listCard.appendChild(block);
+      list.appendChild(block);
     });
+
+    listCard.appendChild(list);
   }
   grid.appendChild(listCard);
 
@@ -549,6 +860,9 @@ function renderRecipes(container) {
   container.appendChild(grid);
 }
 
+/**
+ * ZAKÁZKY – zatím localStorage
+ */
 function renderOrders(container) {
   const recipes = loadList(STORAGE_KEYS.recipes);
   const orders = loadList(STORAGE_KEYS.orders);
@@ -556,7 +870,10 @@ function renderOrders(container) {
   const grid = document.createElement('div');
   grid.className = 'form-grid';
 
-  const formCard = createCard(labels.addOrder, 'Zadejte zakázku zákazníka a přiřaďte k ní konkrétní recepturu.');
+  const formCard = createCard(
+    labels.addOrder,
+    'Zadejte zakázku zákazníka a přiřaďte k ní konkrétní recepturu.'
+  );
   if (!recipes.length) {
     renderEmptyState(formCard, 'Pro založení zakázky vytvořte nejdříve recepturu.');
   } else {
@@ -565,36 +882,45 @@ function renderOrders(container) {
     form.innerHTML = `
       <label>Zákazník<input name="customer" required placeholder="Malířství Novák" /></label>
       <label>Kontaktní osoba<input name="contact" placeholder="jan.novak@example.com" /></label>
-      <label>Receptura<select name="recipe" required>${recipes
-        .map((r) => `<option value="${r.id}">${r.name}</option>`) 
-        .join('')}</select></label>
-      <label>Požadované množství (kg)<input name="quantity" type="number" min="1" step="1" placeholder="500" /></label>
+      <label>Receptura
+        <select name="recipeId" required>
+          ${recipes
+            .map((r) => `<option value="${r.id}">${r.name}${r.shade ? ` — ${r.shade}` : ''}</option>`)
+            .join('')}
+        </select>
+      </label>
+      <label>Množství (kg)<input name="quantity" type="number" min="1" step="1" placeholder="250" /></label>
       <label>Termín výroby<input name="dueDate" type="date" /></label>
-      <label>Stav zakázky<select name="status">
-        <option value="nová">Nová</option>
-        <option value="ve výrobě">Ve výrobě</option>
-        <option value="expedováno">Expedováno</option>
-      </select></label>
-      <label>Poznámka<textarea name="note" rows="2" placeholder="Barvit dle RAL 7040, plnit do IBC."></textarea></label>
-      <div class="form-actions"><button type="submit">Uložit zakázku</button></div>
+      <label>Poznámka k zakázce<textarea name="note" rows="2" placeholder="Dodat na stavbu v týdnu 32, balení 25 kg."></textarea></label>
     `;
+
+    const actionRow = document.createElement('div');
+    actionRow.className = 'form-actions';
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.textContent = 'Uložit zakázku';
+    actionRow.appendChild(submitBtn);
+
+    form.appendChild(actionRow);
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const fd = new FormData(form);
+
       const entry = {
         id: crypto.randomUUID(),
         customer: fd.get('customer'),
         contact: fd.get('contact'),
-        recipeId: fd.get('recipe'),
+        recipeId: fd.get('recipeId'),
         quantity: parseFloat(fd.get('quantity')) || null,
         dueDate: fd.get('dueDate'),
-        status: fd.get('status') || 'nová',
+        status: 'Nová',
         note: fd.get('note'),
         createdAt: new Date().toISOString(),
       };
+
       saveList(STORAGE_KEYS.orders, [...orders, entry]);
-      showToast('Zakázka založena.');
+      showToast('Zakázka uložena.');
       renderOrders(container);
     });
 
@@ -608,9 +934,20 @@ function renderOrders(container) {
   } else {
     const table = document.createElement('table');
     table.className = 'striped';
-    const head = document.createElement('tr');
-    head.innerHTML = '<th>Zákazník</th><th>Receptura</th><th>Množství</th><th>Termín</th><th>Stav</th><th></th>';
+    const head = document.createElement('thead');
+    head.innerHTML = `
+      <tr>
+        <th>Zákazník</th>
+        <th>Receptura</th>
+        <th>Množství</th>
+        <th>Termín</th>
+        <th>Stav</th>
+        <th></th>
+      </tr>
+    `;
     table.appendChild(head);
+
+    const tbody = document.createElement('tbody');
 
     orders.forEach((order) => {
       const recipe = recipes.find((r) => r.id === order.recipeId);
@@ -629,15 +966,68 @@ function renderOrders(container) {
         showToast('Zakázka odstraněna.');
         renderOrders(container);
       });
-      table.appendChild(row);
+      tbody.appendChild(row);
     });
 
+    table.appendChild(tbody);
     listCard.appendChild(table);
   }
   grid.appendChild(listCard);
 
   container.innerHTML = '';
   container.appendChild(grid);
+}
+
+/**
+ * KPI + hlavní render
+ */
+function createBadgeRow(labelText, valueText) {
+  const row = document.createElement('div');
+  row.className = 'flex-row';
+  row.style.justifyContent = 'space-between';
+
+  const label = document.createElement('span');
+  label.className = 'muted';
+  label.textContent = labelText;
+
+  const value = document.createElement('span');
+  value.className = 'strong';
+  value.textContent = valueText;
+
+  row.appendChild(label);
+  row.appendChild(value);
+  return row;
+}
+
+function buildKpis(materials, intermediates, recipes, orders) {
+  const wrap = document.createElement('div');
+  wrap.className = 'dashboard-widgets';
+
+  const kpiData = [
+    { label: 'Suroviny', value: materials.length },
+    { label: 'Polotovary', value: intermediates.length },
+    { label: 'Receptury', value: recipes.length },
+    { label: 'Zakázky', value: orders.length },
+  ];
+
+  kpiData.forEach((kpi) => {
+    const card = document.createElement('div');
+    card.className = 'card kpi-card';
+
+    const label = document.createElement('div');
+    label.className = 'muted';
+    label.textContent = kpi.label;
+    card.appendChild(label);
+
+    const value = document.createElement('div');
+    value.className = 'kpi-value';
+    value.textContent = kpi.value.toString();
+    card.appendChild(value);
+
+    wrap.appendChild(card);
+  });
+
+  return wrap;
 }
 
 function renderCrm(container, context = {}) {
@@ -658,17 +1048,48 @@ function renderCrm(container, context = {}) {
   subtitle.textContent = labels.subtitle;
   wrap.appendChild(subtitle);
 
-  wrap.appendChild(buildKpis(materials, intermediates, recipes, orders));
+  const kpis = buildKpis(materials, intermediates, recipes, orders);
+  wrap.appendChild(kpis);
+
+  const nav = document.createElement('div');
+  nav.className = 'tab-nav';
+  const tabs = [
+    { id: 'suroviny', label: labels.materials },
+    { id: 'polotovary', label: labels.intermediates },
+    { id: 'receptury', label: labels.recipes },
+    { id: 'zakazky', label: labels.orders },
+  ];
+  let activeTab = 'suroviny';
+
+  tabs.forEach((tab) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = tab.label;
+    btn.dataset.tab = tab.id;
+    btn.className = tab.id === activeTab ? 'tab active' : 'tab';
+    btn.addEventListener('click', () => {
+      activeTab = tab.id;
+      nav.querySelectorAll('button').forEach((b) => {
+        b.classList.toggle('active', b.dataset.tab === activeTab);
+      });
+      renderActiveTab();
+    });
+    nav.appendChild(btn);
+  });
+
+  wrap.appendChild(nav);
 
   const content = document.createElement('div');
-  content.className = 'section-spacer';
+  content.className = 'tab-content';
 
-  const subId = context.currentSubId || 'suroviny';
-  if (subId === 'suroviny') renderMaterials(content);
-  else if (subId === 'polotovary') renderIntermediates(content);
-  else if (subId === 'receptury') renderRecipes(content);
-  else if (subId === 'zakazky') renderOrders(content);
+  function renderActiveTab() {
+    if (activeTab === 'suroviny') renderMaterials(content);
+    else if (activeTab === 'polotovary') renderIntermediates(content);
+    else if (activeTab === 'receptury') renderRecipes(content);
+    else if (activeTab === 'zakazky') renderOrders(content);
+  }
 
+  renderActiveTab();
   wrap.appendChild(content);
 
   container.innerHTML = '';
@@ -689,3 +1110,4 @@ export default {
   },
   render: renderCrm,
 };
+

@@ -218,78 +218,85 @@ async function renderDatabaseTab(container, lang, runtimeConfig) {
   function setBusy(isBusy, message) {
     [saveBtn, testBtn].forEach((btn) => {
       btn.disabled = isBusy;
-      btn.textContent = isBusy ? (message || "...") : btn.getAttribute("data-action") === "test" ? "Otestovat spojení" : "Uložit konfiguraci";
+      btn.textContent = isBusy
+        ? (message || "...")
+        : btn.getAttribute("data-action") === "test"
+        ? "Otestovat spojení"
+        : "Uložit konfiguraci";
     });
     feedback.textContent = message || "";
   }
 
   function renderResult(text, tone = "info") {
     feedback.innerHTML = "";
-    const badgeEl = createBadge(text, tone === "danger" ? "danger" : tone === "success" ? "success" : "info");
+    const badgeEl = createBadge(
+      text,
+      tone === "danger" ? "danger" : tone === "success" ? "success" : "info"
+    );
     feedback.appendChild(badgeEl);
   }
 
   async function loadConfig() {
     try {
-      const res = await fetch('./config/database.php', { credentials: 'same-origin' });
+      const res = await fetch("./config/database.php", { credentials: "same-origin" });
       const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.message || 'Načtení selhalo');
+      if (!res.ok || data.success === false) throw new Error(data.message || "Načtení selhalo");
       if (data.config) {
-        form.driver.value = data.config.driver || 'mysql';
-        form.host.value = data.config.host || '';
-        form.port.value = data.config.port || '';
-        form.database.value = data.config.database || '';
-        form.username.value = data.config.username || '';
+        form.driver.value = data.config.driver || "mysql";
+        form.host.value = data.config.host || "";
+        form.port.value = data.config.port || "";
+        form.database.value = data.config.database || "";
+        form.username.value = data.config.username || "";
       }
-      renderResult(lang === 'en' ? 'Konfigurace načtena' : 'Konfigurace načtena', 'success');
+      renderResult(lang === "en" ? "Konfigurace načtena" : "Konfigurace načtena", "success");
     } catch (err) {
       console.error(err);
-      renderResult(err.message || 'Načtení selhalo', 'danger');
-      showToast(err.message || 'Načtení selhalo', { type: 'error' });
+      renderResult(err.message || "Načtení selhalo", "danger");
+      showToast(err.message || "Načtení selhalo", { type: "error" });
     }
   }
 
-  form.addEventListener('submit', async (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const payload = Object.fromEntries(new FormData(form));
     try {
-      setBusy(true, lang === 'en' ? 'Ukládám…' : 'Ukládám…');
-      const res = await requestWithCsrf('./config/database.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      setBusy(true, lang === "en" ? "Ukládám…" : "Ukládám…");
+      const res = await requestWithCsrf("./config/database.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.message || 'Uložení selhalo');
-      renderResult(data.message || 'Konfigurace DB uložena.', 'success');
-      showToast('Konfigurace DB uložena.');
+      if (!res.ok || data.success === false) throw new Error(data.message || "Uložení selhalo");
+      renderResult(data.message || "Konfigurace DB uložena.", "success");
+      showToast("Konfigurace DB uložena.");
       await loadRuntimeConfig({ force: true });
     } catch (err) {
       console.error(err);
-      renderResult(err.message || 'Uložení selhalo', 'danger');
-      showToast(err.message, { type: 'error' });
+      renderResult(err.message || "Uložení selhalo", "danger");
+      showToast(err.message, { type: "error" });
     } finally {
       setBusy(false);
     }
   });
 
-  form.querySelector('[data-action="test"]').addEventListener('click', async () => {
+  form.querySelector('[data-action="test"]').addEventListener("click", async () => {
     const payload = Object.fromEntries(new FormData(form));
     try {
-      setBusy(true, lang === 'en' ? 'Testuji spojení…' : 'Testuji spojení…');
-      const res = await requestWithCsrf('./config/database.php?action=test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      setBusy(true, lang === "en" ? "Testuji spojení…" : "Testuji spojení…");
+      const res = await requestWithCsrf("./config/database.php?action=test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.message || 'Test selhal');
-      renderResult(data.message || 'Připojení úspěšné.', 'success');
-      showToast(data.message || 'Připojení úspěšné.');
+      if (!res.ok || data.success === false) throw new Error(data.message || "Test selhal");
+      renderResult(data.message || "Připojení úspěšné.", "success");
+      showToast(data.message || "Připojení úspěšné.");
     } catch (err) {
       console.error(err);
-      renderResult(err.message || 'Test selhal', 'danger');
-      showToast(err.message, { type: 'error' });
+      renderResult(err.message || "Test selhal", "danger");
+      showToast(err.message, { type: "error" });
     } finally {
       setBusy(false);
     }
@@ -327,7 +334,9 @@ async function renderPermissionsTab(container, lang) {
 }
 
 async function renderModuleSettingsTab(container, lang, appConfig) {
-  container.appendChild(createSectionTitle(lang === "en" ? "Module settings" : "Konfigurace modulů"));
+  container.appendChild(
+    createSectionTitle(lang === "en" ? "Module settings" : "Konfigurace modulů")
+  );
   const card = document.createElement("div");
   card.className = "card";
 
@@ -353,95 +362,197 @@ async function renderModuleSettingsTab(container, lang, appConfig) {
   const configurable = moduleConfigs.filter((item) => item.config?.settingsSchema?.fields?.length);
   if (!configurable.length) {
     const empty = document.createElement("div");
-    empty.className = "muted";
-    empty.textContent = lang === "en" ? "Žádné moduly nemají konfigurační schéma." : "Žádné moduly nemají konfigurační schéma.";
+    empty.textContent =
+      lang === "en"
+        ? "Žádné moduly nemají konfigurační schéma."
+        : "Žádné moduly nemají konfigurační schéma.";
     card.appendChild(empty);
-    container.appendChild(card);
-    return;
+  } else {
+    configurable.forEach(({ mod, config }) => {
+      const formWrap = document.createElement("div");
+      formWrap.className = "form-field";
+      const title = document.createElement("div");
+      title.className = "strong";
+      title.textContent = config?.name || mod.name || mod.id;
+      formWrap.appendChild(title);
+      if (config?.description) {
+        formWrap.appendChild(createHint(config.description));
+      }
+
+      const form = document.createElement("form");
+      form.className = "form-grid";
+      const currentValues = getRuntimeConfig().moduleConfig?.[mod.id] || {};
+
+      (config.settingsSchema.fields || []).forEach((field) => {
+        const wrapper = document.createElement("label");
+        wrapper.textContent = field.label || field.key;
+        if (field.type === "select" && Array.isArray(field.options)) {
+          const select = document.createElement("select");
+          select.name = field.key;
+          field.options.forEach((opt) => {
+            const option = document.createElement("option");
+            option.value = opt.value;
+            option.textContent = opt.label;
+            if (currentValues[field.key] === opt.value) option.selected = true;
+            select.appendChild(option);
+          });
+          wrapper.appendChild(select);
+        } else if (field.type === "checkbox") {
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.name = field.key;
+          input.checked = Boolean(currentValues[field.key]);
+          wrapper.appendChild(input);
+        } else {
+          const input = document.createElement("input");
+          input.type = field.type || "text";
+          input.name = field.key;
+          input.value = currentValues[field.key] ?? "";
+          if (field.placeholder) input.placeholder = field.placeholder;
+          if (field.min !== undefined) input.min = field.min;
+          wrapper.appendChild(input);
+        }
+        if (field.helpText) {
+          wrapper.appendChild(createHint(field.helpText));
+        }
+        form.appendChild(wrapper);
+      });
+
+      const actions = document.createElement("div");
+      actions.className = "form-actions";
+      const save = document.createElement("button");
+      save.type = "submit";
+      save.textContent = lang === "en" ? "Uložit" : "Uložit";
+      actions.appendChild(save);
+      form.appendChild(actions);
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const formData = new FormData(form);
+        const values = {};
+        (config.settingsSchema.fields || []).forEach((field) => {
+          if (field.type === "checkbox") {
+            values[field.key] = formData.get(field.key) === "on";
+          } else if (field.type === "number") {
+            const raw = formData.get(field.key);
+            values[field.key] = raw === null || raw === "" ? null : Number(raw);
+          } else {
+            values[field.key] = formData.get(field.key);
+          }
+        });
+        const current = getRuntimeConfig();
+        setRuntimeConfig({
+          ...current,
+          moduleConfig: { ...current.moduleConfig, [mod.id]: values },
+        });
+        showToast(
+          lang === "en" ? "Module settings saved" : "Nastavení modulu uloženo."
+        );
+      });
+
+      formWrap.appendChild(form);
+      list.appendChild(formWrap);
+    });
   }
 
-  configurable.forEach(({ mod, config }) => {
-    const formWrap = document.createElement("div");
-    formWrap.className = "form-field";
-    const title = document.createElement("div");
-    title.className = "strong";
-    title.textContent = config?.name || mod.name || mod.id;
-    formWrap.appendChild(title);
-    if (config?.description) {
-      formWrap.appendChild(createHint(config.description));
-    }
+  container.appendChild(card);
 
-    const form = document.createElement("form");
-    form.className = "form-grid";
-    const currentValues = getRuntimeConfig().moduleConfig?.[mod.id] || {};
+  const modulesWithSchema = moduleConfigs.filter(
+    (item) => item.config?.dbSchema?.schemaFile
+  );
+  if (modulesWithSchema.length) {
+    const schemaCard = document.createElement("div");
+    schemaCard.className = "card";
 
-    (config.settingsSchema.fields || []).forEach((field) => {
-      const wrapper = document.createElement("label");
-      wrapper.textContent = field.label || field.key;
-      if (field.type === "select" && Array.isArray(field.options)) {
-        const select = document.createElement("select");
-        select.name = field.key;
-        field.options.forEach((opt) => {
-          const option = document.createElement("option");
-          option.value = opt.value;
-          option.textContent = opt.label;
-          if (currentValues[field.key] === opt.value) option.selected = true;
-          select.appendChild(option);
-        });
-        wrapper.appendChild(select);
-      } else if (field.type === "checkbox") {
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.name = field.key;
-        input.checked = Boolean(currentValues[field.key]);
-        wrapper.appendChild(input);
-      } else {
-        const input = document.createElement("input");
-        input.type = field.type || "text";
-        input.name = field.key;
-        input.value = currentValues[field.key] ?? "";
-        if (field.placeholder) input.placeholder = field.placeholder;
-        if (field.min !== undefined) input.min = field.min;
-        wrapper.appendChild(input);
-      }
-      if (field.helpText) {
-        wrapper.appendChild(createHint(field.helpText));
-      }
-      form.appendChild(wrapper);
-    });
+    const schemaTitle = document.createElement("h3");
+    schemaTitle.textContent =
+      lang === "en" ? "Module database schema" : "Databázové schéma modulů";
+    schemaCard.appendChild(schemaTitle);
 
-    const actions = document.createElement("div");
-    actions.className = "form-actions";
-    const save = document.createElement("button");
-    save.type = "submit";
-    save.textContent = lang === "en" ? "Uložit" : "Uložit";
-    actions.appendChild(save);
-    form.appendChild(actions);
+    const schemaInfo = document.createElement("p");
+    schemaInfo.className = "muted";
+    schemaInfo.textContent =
+      lang === "en"
+        ? "U vybraných modulů můžete založit nebo znovu spustit jejich databázové schéma."
+        : "U vybraných modulů můžete založit nebo znovu spustit jejich databázové schéma.";
+    schemaCard.appendChild(schemaInfo);
 
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const formData = new FormData(form);
-      const values = {};
-      (config.settingsSchema.fields || []).forEach((field) => {
-        if (field.type === "checkbox") {
-          values[field.key] = formData.get(field.key) === "on";
-        } else if (field.type === "number") {
-          const raw = formData.get(field.key);
-          values[field.key] = raw === null || raw === "" ? null : Number(raw);
-        } else {
-          values[field.key] = formData.get(field.key);
+    const schemaList = document.createElement("div");
+    schemaList.className = "form-grid";
+
+    modulesWithSchema.forEach(({ mod }) => {
+      const row = document.createElement("div");
+      row.className = "form-field";
+
+      const rowTitle = document.createElement("div");
+      rowTitle.className = "strong";
+      const metaLabel =
+        (mod.meta &&
+          mod.meta.labels &&
+          (mod.meta.labels[lang] || mod.meta.labels.cs)) ||
+        mod.name ||
+        mod.id;
+      rowTitle.textContent = `${metaLabel} (${mod.id})`;
+      row.appendChild(rowTitle);
+
+      row.appendChild(
+        createHint(
+          lang === "en"
+            ? "Vytvoří tabulky modulu v aktuálně připojené databázi. Použijte pouze se správným připojením."
+            : "Vytvoří tabulky modulu v aktuálně připojené databázi. Použijte pouze se správným připojením."
+        )
+      );
+
+      const actions = document.createElement("div");
+      actions.className = "form-actions";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent =
+        lang === "en" ? "Create DB tables" : "Založit tabulky";
+      button.disabled = !appConfig.dbAvailable;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          const res = await requestWithCsrf(
+            "./config/module_schema.php?action=install",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "same-origin",
+              body: JSON.stringify({ moduleId: mod.id }),
+            }
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) {
+            throw new Error(data?.message || "Install failed");
+          }
+          showToast(
+            lang === "en"
+              ? "Module schema has been installed."
+              : "Schéma modulu bylo úspěšně vytvořeno.",
+            { type: "success" }
+          );
+        } catch (err) {
+          console.error(err);
+          showToast(
+            lang === "en"
+              ? "Failed to install module schema."
+              : "Založení schématu modulu se nezdařilo.",
+            { type: "error" }
+          );
+        } finally {
+          button.disabled = false;
         }
       });
-      const current = getRuntimeConfig();
-      setRuntimeConfig({ ...current, moduleConfig: { ...current.moduleConfig, [mod.id]: values } });
-      showToast(lang === "en" ? "Module settings saved" : "Nastavení modulu uloženo.");
+      actions.appendChild(button);
+      row.appendChild(actions);
+
+      schemaList.appendChild(row);
     });
 
-    formWrap.appendChild(form);
-    list.appendChild(formWrap);
-  });
-
-  container.appendChild(card);
+    schemaCard.appendChild(schemaList);
+    container.appendChild(schemaCard);
+  }
 }
 
 async function render(container, ctx) {
@@ -513,3 +624,4 @@ export default {
   meta: CONFIG_META,
   render,
 };
+
