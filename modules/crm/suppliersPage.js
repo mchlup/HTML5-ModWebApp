@@ -40,6 +40,11 @@ export function renderSuppliers(container, { labels } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'form-grid crm-grid';
 
+  const intro = document.createElement('p');
+  intro.className = 'muted';
+  intro.textContent = labels.suppliersIntro || 'Přehled dodavatelů a zaznamenaných cen.';
+  wrap.appendChild(intro);
+
   const summaryCard = createCard(labels.suppliers, labels.suppliersIntro || 'Rychlý přehled kontaktů a cen od jednotlivých dodavatelů.');
 
   const toolbar = document.createElement('div');

@@ -80,6 +80,7 @@ export async function loadRuntimeConfig(options = {}) {
     return runtimeConfig;
   }
   try {
+    const appDefinition = await loadAppDefinition();
     const data = await fetchJson(MODULES_ENDPOINT, {
       headers: { Accept: "application/json" },
       credentials: "same-origin",
@@ -97,6 +98,7 @@ export async function loadRuntimeConfig(options = {}) {
     return persistRuntimeConfig({
       ...runtimeConfig,
       enabledModules,
+      moduleConfig: appDefinition?.modules || {},
       permissions,
       modules,
       dbAvailable: Boolean(data?.dbAvailable),
@@ -129,7 +131,10 @@ export async function ensureRuntimeConfig() {
   }
   const definition = await loadAppDefinition();
   const defaults = Array.isArray(definition?.defaultEnabledModules) ? definition.defaultEnabledModules : [];
-  return persistRuntimeConfig({ enabledModules: defaults });
+  return persistRuntimeConfig({
+    enabledModules: defaults,
+    moduleConfig: definition?.modules || {},
+  });
 }
 
 export async function loadModuleConfig(moduleName) {

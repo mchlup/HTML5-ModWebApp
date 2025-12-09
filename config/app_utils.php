@@ -28,6 +28,8 @@ function listAvailableModules(?string $dir = null): array
 {
     $modules = [];
     $dir = $dir ?: __DIR__ . '/../modules';
+    $definition = loadAppDefinition();
+    $moduleOverrides = is_array($definition['modules'] ?? null) ? $definition['modules'] : [];
 
     if (!is_dir($dir)) {
         return $modules;
@@ -48,6 +50,8 @@ function listAvailableModules(?string $dir = null): array
                 'enabled' => true,
             ];
 
+            $overrides = is_array($moduleOverrides[$name] ?? null) ? $moduleOverrides[$name] : [];
+
             $configPath = $path . '/config.json';
             if (file_exists($configPath)) {
                 $json = json_decode(file_get_contents($configPath), true);
@@ -65,6 +69,13 @@ function listAvailableModules(?string $dir = null): array
                         $manifest['category'] = $json['category'];
                     }
                 }
+            }
+
+            if (isset($overrides['name'])) {
+                $manifest['name'] = (string) $overrides['name'];
+            }
+            if (isset($overrides['description'])) {
+                $manifest['description'] = (string) $overrides['description'];
             }
 
             $modules[] = $manifest;

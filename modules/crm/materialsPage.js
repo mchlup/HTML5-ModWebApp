@@ -1,8 +1,15 @@
 import { showToast } from '../../core/uiService.js';
 import { requestWithCsrf } from '../../core/authService.js';
+import {
+  deleteUserColumns,
+  loadUserColumns,
+  saveUserColumns,
+} from '../../core/columnViewService.js';
 import { createCard, STORAGE_KEYS, saveList, truncate } from './shared.js';
 
 const MATERIALS_API = './modules/crm/api/materials.php';
+const MODULE_CODE = 'crm';
+const VIEW_CODE = 'materials';
 
 async function apiFetch(url, options = {}) {
   const res = await fetch(url, { credentials: 'same-origin', ...options });
@@ -70,6 +77,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     labels.addMaterial,
     'Zadejte parametry suroviny a uložte ji – bez uložených surovin nelze pokračovat v polotovarech a recepturách.'
   );
+  formCard.innerHTML = '';
 
   const form = document.createElement('form');
   form.className = 'form-grid materials-form';
@@ -148,7 +156,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     </div>
   `;
   formCard.appendChild(form);
-  formCard.style.display = 'none';
+  formCard.classList.add('materials-modal-card');
 
   const nameDatalist = document.createElement('datalist');
   nameDatalist.id = 'crm-material-name-list';
@@ -170,7 +178,12 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
         <span class="muted materials-filter-label">Filtrovat suroviny</span>
         <input type="search" name="materialsFilter" placeholder="Hledat podle kódu, názvu nebo dodavatele" />
       </label>
-      <span class="muted materials-count"></span>
+      <div class="materials-toolbar-actions">
+        <button type="button" class="crm-btn crm-btn-secondary" data-role="column-settings">
+          ⚙ Zobrazené sloupce
+        </button>
+        <span class="muted materials-count"></span>
+      </div>
     </div>
   `;
   listCard.appendChild(toolbar);
@@ -213,10 +226,9 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
   toggleBtn.textContent = 'Přidat surovinu';
-  toggleBtn.className = 'crm-btn crm-btn-primary';
+  toggleBtn.className = 'crm-btn crm-btn-primary materials-add-btn';
   toggleWrap.appendChild(toggleBtn);
 
-  grid.appendChild(formCard);
   grid.appendChild(listCard);
 
   container.innerHTML = '';
@@ -229,10 +241,15 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   let currentPage = 1;
   let sortBy = 'code';
   let sortDir = 'asc';
+  const defaultColumns = getDefaultColumns();
+  let columns = normalizeColumns(defaultColumns);
+  let columnModal = null;
+  let materialModal = null;
 
   const submitBtn = form.querySelector('button[data-role="save"]');
   const cancelEditBtn = form.querySelector('button[data-role="cancel-edit"]');
   const filterInput = toolbar.querySelector('input[name="materialsFilter"]');
+  const columnSettingsBtn = toolbar.querySelector('[data-role="column-settings"]');
   const countLabel = toolbar.querySelector('.materials-count');
 
   const pageInfo = pagination.querySelector('.materials-page-info');
@@ -243,12 +260,6 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   cancelEditBtn.classList.add('crm-btn', 'crm-btn-secondary');
   prevBtn.classList.add('crm-btn', 'crm-btn-secondary', 'crm-btn-sm');
   nextBtn.classList.add('crm-btn', 'crm-btn-secondary', 'crm-btn-sm');
-
-  const sortHeaders = head.querySelectorAll('th[data-sort]');
-  const defaultSortHeader = head.querySelector('th[data-sort="code"]');
-  if (defaultSortHeader) {
-    defaultSortHeader.classList.add('sorted-asc');
-  }
 
   const nameInput = form.elements.namedItem('name');
   const codeInput = form.elements.namedItem('code');
@@ -262,29 +273,202 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   const safetyInput = form.elements.namedItem('safety');
   const noteInput = form.elements.namedItem('note');
 
+  function buildMaterialModal() {
+    if (materialModal) return materialModal;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay materials-modal-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal materials-modal';
+
+    const header = document.createElement('div');
+    header.className = 'modal-header materials-modal-header';
+    const titleWrap = document.createElement('div');
+    titleWrap.innerHTML = `
+      <p class="modal-eyebrow">Nová surovina</p>
+      <h3>${labels.addMaterial}</h3>
+      <p class="materials-modal-subtitle">Zadejte parametry suroviny a uložte ji.</p>
+    `;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'modal-close';
+    closeBtn.innerHTML = '&times;';
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement('div');
+    body.className = 'materials-modal-body';
+    body.appendChild(formCard);
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    overlay.appendChild(modal);
+
+    const handleClose = () => {
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+      if (!document.querySelector('.modal-overlay')) {
+        document.body.classList.remove('modal-open');
+      }
+    };
+
+    closeBtn.addEventListener('click', handleClose);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        handleClose();
+      }
+    });
+
+    materialModal = { overlay, modal, handleClose };
+    return materialModal;
+  }
+
+  function openMaterialModal() {
+    const modalObj = buildMaterialModal();
+    if (!modalObj.overlay.isConnected) {
+      document.body.appendChild(modalObj.overlay);
+    }
+    document.body.classList.add('modal-open');
+    setTimeout(() => {
+      nameInput?.focus();
+    }, 50);
+  }
+
+  function closeMaterialModal() {
+    if (materialModal) {
+      materialModal.handleClose();
+    }
+  }
+
   nameInput.setAttribute('list', nameDatalist.id);
   supplierInput.setAttribute('list', supplierDatalist.id);
 
-  function showForm() {
-    formCard.style.display = '';
-    toggleBtn.textContent = 'Skrýt formulář';
-  }
-
-  function hideForm() {
-    formCard.style.display = 'none';
-    toggleBtn.textContent = 'Přidat surovinu';
-  }
-
-  toggleBtn.addEventListener('click', () => {
-    const hidden = formCard.style.display === 'none';
-    if (hidden) {
-      resetFormState();
-      showForm();
-      formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      hideForm();
+  function formatPriceText(material) {
+    if (typeof material.price === 'number') {
+      return `${material.price.toFixed(2)} Kč/kg`;
     }
-  });
+    if (material.price) return material.price;
+    return '—';
+  }
+
+  function formatParamsHtml(material) {
+    const densityText = material.density != null ? material.density : '–';
+    const solidsText = material.solids != null ? `${material.solids} %` : '–';
+    const vocText = material.voc != null ? `${material.voc} g/l` : '–';
+    const parts = [];
+    parts.push(`Hustota: ${densityText}`);
+    parts.push(`Sušina: ${solidsText}`);
+    parts.push(`VOC: ${vocText}`);
+    if (material.okp) parts.push(`OKP: ${material.okp}`);
+    if (material.oil) parts.push(`Olej: ${material.oil}`);
+    if (material.safety) parts.push(`SDS: ${material.safety}`);
+    return `<span class="materials-params-text">${parts.join(' | ')}</span>`;
+  }
+
+  function renderActionsCell(material) {
+    const wrap = document.createElement('div');
+    wrap.className = 'materials-actions';
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'secondary crm-btn crm-btn-secondary crm-btn-sm';
+    editBtn.textContent = 'Upravit';
+    editBtn.addEventListener('click', () => {
+      fillFormFromMaterial(material);
+      openMaterialModal();
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'danger crm-btn crm-btn-danger crm-btn-sm';
+    delBtn.textContent = labels.delete;
+    delBtn.addEventListener('click', async () => {
+      if (!confirm('Opravdu odstranit tuto surovinu?')) return;
+      try {
+        await apiDelete(`${MATERIALS_API}?id=${encodeURIComponent(material.id)}`);
+        showToast('Surovina odstraněna.');
+        if (editingId === material.id) {
+          resetFormState();
+        }
+        await reload();
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Odstranění suroviny selhalo.', { type: 'error' });
+      }
+    });
+
+    wrap.appendChild(editBtn);
+    wrap.appendChild(delBtn);
+    return wrap;
+  }
+
+  function getDefaultColumns() {
+    return [
+      {
+        id: 'code',
+        label: 'Kód',
+        sortable: true,
+        defaultVisible: true,
+        sortValue: (m) => (m.code || '').toString().toLowerCase(),
+        render: (m) => m.code || '-',
+      },
+      {
+        id: 'name',
+        label: 'Název',
+        sortable: true,
+        defaultVisible: true,
+        sortValue: (m) => (m.name || '').toString().toLowerCase(),
+        render: (m) => m.name || '-',
+      },
+      {
+        id: 'supplier',
+        label: 'Dodavatel',
+        sortable: true,
+        defaultVisible: true,
+        sortValue: (m) => (m.supplier || '').toString().toLowerCase(),
+        render: (m) => m.supplier || '-',
+      },
+      {
+        id: 'price',
+        label: 'Cena',
+        sortable: true,
+        defaultVisible: true,
+        sortValue: (m) => (typeof m.price === 'number' ? m.price : Number.MAX_SAFE_INTEGER),
+        render: (m) => formatPriceText(m),
+      },
+      {
+        id: 'note',
+        label: 'Poznámka',
+        sortable: true,
+        defaultVisible: true,
+        sortValue: (m) => (m.note || '').toString().toLowerCase(),
+        render: (m) => (m.note ? truncate(m.note, 80) : '—'),
+        cellClass: 'cell-note',
+      },
+      {
+        id: 'params',
+        label: 'Parametry',
+        sortable: false,
+        defaultVisible: true,
+        render: (m) => formatParamsHtml(m),
+        allowHtml: true,
+      },
+      {
+        id: 'actions',
+        label: '',
+        sortable: false,
+        defaultVisible: true,
+        required: true,
+        width: '1%',
+        cellClass: 'form-actions',
+        render: (m) => renderActionsCell(m),
+      },
+    ];
+  }
 
   function resetFormState() {
     form.reset();
@@ -292,6 +476,11 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     submitBtn.textContent = 'Uložit surovinu';
     cancelEditBtn.style.display = 'none';
   }
+
+  toggleBtn.addEventListener('click', () => {
+    resetFormState();
+    openMaterialModal();
+  });
 
   function fillFormFromMaterial(material) {
     if (!material) return;
@@ -336,18 +525,82 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   }
 
   function sortList(list) {
-    const key = sortBy;
+    const column = columns.find((c) => c.id === sortBy);
+    if (!column || column.sortable === false) {
+      return [...list];
+    }
     const dir = sortDir === 'asc' ? 1 : -1;
+    const getValue = (item) => {
+      if (typeof column.sortValue === 'function') {
+        return column.sortValue(item);
+      }
+      const raw = item[column.id];
+      return raw == null ? '' : raw;
+    };
     return [...list].sort((a, b) => {
-      const va = (a[key] || '').toString().toLowerCase();
-      const vb = (b[key] || '').toString().toLowerCase();
-      return va.localeCompare(vb, 'cs', { sensitivity: 'base' }) * dir;
+      const va = getValue(a);
+      const vb = getValue(b);
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return (va - vb) * dir;
+      }
+      return String(va)
+        .toString()
+        .localeCompare(String(vb), 'cs', { sensitivity: 'base' }) * dir;
     });
   }
 
+  function getVisibleColumns() {
+    return columns.filter((c) => c.visible !== false);
+  }
+
+  function ensureSortColumn() {
+    const current = columns.find((c) => c.id === sortBy && c.sortable !== false);
+    if (current && current.visible !== false) return;
+    const fallback = columns.find((c) => c.visible !== false && c.sortable !== false);
+    if (fallback) {
+      sortBy = fallback.id;
+      sortDir = 'asc';
+    }
+  }
+
+  function renderTableHead() {
+    ensureSortColumn();
+    head.innerHTML = '';
+    const tr = document.createElement('tr');
+    getVisibleColumns().forEach((col) => {
+      const th = document.createElement('th');
+      th.textContent = col.label || '';
+      if (col.width) {
+        th.style.width = col.width;
+      }
+      if (col.sortable !== false) {
+        th.dataset.sort = col.id;
+        th.classList.add('sortable');
+        if (sortBy === col.id) {
+          th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        }
+        th.addEventListener('click', () => {
+          if (sortBy === col.id) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortBy = col.id;
+            sortDir = 'asc';
+          }
+          renderTableHead();
+          applyFilter();
+        });
+      }
+      tr.appendChild(th);
+    });
+    head.appendChild(tr);
+  }
+
   function renderRows(pageItems, total, pageCount) {
+    const visibleColumns = getVisibleColumns();
+    const colCount = Math.max(1, visibleColumns.length || 1);
+
     if (!Array.isArray(pageItems) || total === 0) {
-      tbody.innerHTML = `<tr><td colspan="7">${labels.emptyMaterials}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${colCount}">${labels.emptyMaterials}</td></tr>`;
       countLabel.textContent = '0 položek';
       pageInfo.textContent = '';
       prevBtn.disabled = true;
@@ -357,71 +610,25 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
 
     tbody.innerHTML = '';
 
-    pageItems.forEach((m) => {
+    pageItems.forEach((material) => {
       const tr = document.createElement('tr');
-      const priceText =
-        typeof m.price === 'number'
-          ? `${m.price.toFixed(2)} Kč/kg`
-          : m.price
-          ? m.price
-          : '—';
-      const densityText = m.density != null ? m.density : '–';
-      const solidsText = m.solids != null ? `${m.solids} %` : '–';
-      const vocText = m.voc != null ? `${m.voc} g/l` : '–';
-      const noteText = m.note ? truncate(m.note, 80) : '—';
 
-      const parts = [];
-      parts.push(`Hustota: ${densityText}`);
-      parts.push(`Sušina: ${solidsText}`);
-      parts.push(`VOC: ${vocText}`);
-      if (m.okp) parts.push(`OKP: ${m.okp}`);
-      if (m.oil) parts.push(`Olej: ${m.oil}`);
-      if (m.safety) parts.push(`SDS: ${m.safety}`);
-      const paramsHtml = `<span class="materials-params-text">${parts.join(' | ')}</span>`;
+      visibleColumns.forEach((col) => {
+        const td = document.createElement('td');
+        if (col.cellClass) td.className = col.cellClass;
+        if (col.width) td.style.width = col.width;
 
-      tr.innerHTML = `
-        <td>${m.code || '-'}</td>
-        <td>${m.name}</td>
-        <td>${m.supplier || '-'}</td>
-        <td>${priceText}</td>
-        <td>${noteText}</td>
-        <td>${paramsHtml}</td>
-        <td class="form-actions" style="white-space:nowrap;"></td>
-      `;
-
-      const actionsCell = tr.querySelector('td.form-actions');
-
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'secondary crm-btn crm-btn-secondary crm-btn-sm';
-      editBtn.textContent = 'Upravit';
-      editBtn.addEventListener('click', () => {
-        fillFormFromMaterial(m);
-        showForm();
-        formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'danger crm-btn crm-btn-danger crm-btn-sm';
-      delBtn.textContent = labels.delete;
-      delBtn.addEventListener('click', async () => {
-        if (!confirm('Opravdu odstranit tuto surovinu?')) return;
-        try {
-          await apiDelete(`${MATERIALS_API}?id=${encodeURIComponent(m.id)}`);
-          showToast('Surovina odstraněna.');
-          if (editingId === m.id) {
-            resetFormState();
-          }
-          await reload();
-        } catch (err) {
-          console.error(err);
-          showToast(err.message || 'Odstranění suroviny selhalo.', { type: 'error' });
+        const content = col.render ? col.render(material) : material[col.id];
+        if (content instanceof Node) {
+          td.appendChild(content);
+        } else if (col.allowHtml) {
+          td.innerHTML = content != null ? content : '—';
+        } else {
+          td.textContent = content != null && content !== '' ? content : '—';
         }
-      });
 
-      actionsCell.appendChild(editBtn);
-      actionsCell.appendChild(delBtn);
+        tr.appendChild(td);
+      });
 
       tbody.appendChild(tr);
     });
@@ -471,8 +678,216 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     renderTable();
   }
 
+  function normalizeColumns(list) {
+    return (list || []).map((col, index) => {
+      const visible =
+        col.visible !== undefined ? col.visible !== false : col.defaultVisible !== false;
+      return {
+        ...col,
+        order: typeof col.order === 'number' ? col.order : index,
+        visible: col.required ? true : visible,
+      };
+    });
+  }
+
+  function refreshColumnOrder() {
+    columns = normalizeColumns(columns);
+  }
+
+  function moveColumn(id, delta, list = columns) {
+    const currentIndex = list.findIndex((c) => c.id === id);
+    if (currentIndex < 0) return list;
+    const targetIndex = currentIndex + delta;
+    if (targetIndex < 0 || targetIndex >= list.length) return list;
+    const updated = [...list];
+    const [moved] = updated.splice(currentIndex, 1);
+    updated.splice(targetIndex, 0, moved);
+    const normalized = normalizeColumns(updated);
+    if (list === columns) {
+      columns = normalized;
+    }
+    return normalized;
+  }
+
+  function closeColumnModal() {
+    if (columnModal) {
+      columnModal.remove();
+      if (!document.querySelector('.modal-overlay')) {
+        document.body.classList.remove('modal-open');
+      }
+      columnModal = null;
+    }
+  }
+
+  async function handleResetColumns() {
+    try {
+      await deleteUserColumns(MODULE_CODE, VIEW_CODE);
+      columns = normalizeColumns(getDefaultColumns());
+      renderTableHead();
+      applyFilter();
+      closeColumnModal();
+      showToast('Výchozí sloupce byly obnoveny.');
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Obnovení sloupců selhalo.', { type: 'error' });
+    }
+  }
+
+  async function handleSaveColumns(nextColumns = columns) {
+    columns = normalizeColumns(nextColumns);
+    try {
+      await saveUserColumns(MODULE_CODE, VIEW_CODE, columns);
+      renderTableHead();
+      applyFilter();
+      closeColumnModal();
+      showToast('Nastavení sloupců bylo uloženo.');
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Uložení nastavení sloupců selhalo.', { type: 'error' });
+    }
+  }
+
+  function openColumnsModal() {
+    closeColumnModal();
+    columnModal = document.createElement('div');
+    columnModal.className = 'modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    columnModal.appendChild(modal);
+
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+    const title = document.createElement('h3');
+    title.textContent = 'Nastavení sloupců';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'modal-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.addEventListener('click', closeColumnModal);
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    const intro = document.createElement('p');
+    intro.className = 'muted';
+    intro.textContent = 'Vyberte, které sloupce chcete zobrazit, a upravte jejich pořadí.';
+    modal.appendChild(intro);
+
+    const list = document.createElement('ul');
+    list.className = 'column-config-list';
+    let draftColumns = normalizeColumns(columns);
+
+    const renderList = () => {
+      list.innerHTML = '';
+      draftColumns.forEach((col, index) => {
+        const item = document.createElement('li');
+        item.className = 'column-config-item';
+
+        const label = document.createElement('label');
+        label.className = 'column-config-label';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = col.visible !== false;
+        checkbox.disabled = col.required === true;
+        checkbox.addEventListener('change', () => {
+          col.visible = col.required ? true : checkbox.checked;
+        });
+        label.appendChild(checkbox);
+        const text = document.createElement('span');
+        text.textContent = col.label || col.id;
+        label.appendChild(text);
+        if (col.required) {
+          const badge = document.createElement('span');
+          badge.className = 'pill pill-secondary';
+          badge.textContent = 'Povinný';
+          label.appendChild(badge);
+        }
+        item.appendChild(label);
+
+        const widthInput = document.createElement('input');
+        widthInput.type = 'text';
+        widthInput.className = 'column-config-width';
+        widthInput.placeholder = 'Šířka (px/%)';
+        widthInput.value = col.width || '';
+        widthInput.addEventListener('input', (e) => {
+          const val = (e.target.value || '').trim();
+          col.width = val || null;
+        });
+        item.appendChild(widthInput);
+
+        const actions = document.createElement('div');
+        actions.className = 'column-config-actions';
+
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.className = 'crm-btn crm-btn-secondary crm-btn-sm';
+        upBtn.textContent = '▲';
+        upBtn.disabled = index === 0;
+        upBtn.addEventListener('click', () => {
+          draftColumns = moveColumn(col.id, -1, draftColumns);
+          renderList();
+        });
+
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.className = 'crm-btn crm-btn-secondary crm-btn-sm';
+        downBtn.textContent = '▼';
+        downBtn.disabled = index === draftColumns.length - 1;
+        downBtn.addEventListener('click', () => {
+          draftColumns = moveColumn(col.id, 1, draftColumns);
+          renderList();
+        });
+
+        actions.appendChild(upBtn);
+        actions.appendChild(downBtn);
+        item.appendChild(actions);
+
+        list.appendChild(item);
+      });
+    };
+
+    renderList();
+
+    const actionsWrap = document.createElement('div');
+    actionsWrap.className = 'modal-actions';
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'crm-btn crm-btn-secondary';
+    resetBtn.textContent = 'Obnovit výchozí';
+    resetBtn.addEventListener('click', handleResetColumns);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'crm-btn crm-btn-secondary';
+    cancelBtn.textContent = 'Zrušit';
+    cancelBtn.addEventListener('click', closeColumnModal);
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'crm-btn crm-btn-primary';
+    saveBtn.textContent = 'Uložit';
+    saveBtn.addEventListener('click', () => handleSaveColumns(draftColumns));
+
+    actionsWrap.appendChild(resetBtn);
+    actionsWrap.appendChild(cancelBtn);
+    actionsWrap.appendChild(saveBtn);
+
+    modal.appendChild(list);
+    modal.appendChild(actionsWrap);
+
+    document.body.appendChild(columnModal);
+    document.body.classList.add('modal-open');
+  }
+
+  async function loadColumnsConfig() {
+    const loaded = await loadUserColumns(MODULE_CODE, VIEW_CODE, getDefaultColumns());
+    columns = normalizeColumns(loaded);
+    renderTableHead();
+  }
+
   async function reload() {
-    tbody.innerHTML = '<tr><td colspan="7">Načítám…</td></tr>';
+    const loadingColspan = Math.max(1, getVisibleColumns().length || 1);
+    tbody.innerHTML = `<tr><td colspan="${loadingColspan}">Načítám…</td></tr>`;
     countLabel.textContent = '';
     pageInfo.textContent = '';
     prevBtn.disabled = true;
@@ -491,7 +906,8 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       }
     } catch (err) {
       console.error(err);
-      tbody.innerHTML = '<tr><td colspan="7">Chyba při načítání surovin.</td></tr>';
+      const errorColspan = Math.max(1, getVisibleColumns().length || 1);
+      tbody.innerHTML = `<tr><td colspan="${errorColspan}">Chyba při načítání surovin.</td></tr>`;
       countLabel.textContent = '';
       pageInfo.textContent = '';
       showToast(err.message || 'Chyba při načítání surovin.', { type: 'error' });
@@ -518,25 +934,9 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     }
   });
 
-  sortHeaders.forEach((th) => {
-    th.addEventListener('click', () => {
-      const col = th.dataset.sort;
-      if (!col) return;
-      if (sortBy === col) {
-        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-      } else {
-        sortBy = col;
-        sortDir = 'asc';
-      }
-
-      sortHeaders.forEach((h) => {
-        h.classList.remove('sorted-asc', 'sorted-desc');
-      });
-      th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
-
-      applyFilter();
-    });
-  });
+  if (columnSettingsBtn) {
+    columnSettingsBtn.addEventListener('click', openColumnsModal);
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -596,6 +996,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       await apiPost(MATERIALS_API, payload);
       showToast(editingId ? 'Změny suroviny byly uloženy.' : 'Surovina uložena.');
       resetFormState();
+      closeMaterialModal();
       await reload();
     } catch (err) {
       console.error(err);
@@ -605,7 +1006,9 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
 
   cancelEditBtn.addEventListener('click', () => {
     resetFormState();
+    closeMaterialModal();
   });
 
+  await loadColumnsConfig();
   await reload();
 }
