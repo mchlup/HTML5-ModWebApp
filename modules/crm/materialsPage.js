@@ -77,6 +77,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     labels.addMaterial,
     'Zadejte parametry suroviny a uložte ji – bez uložených surovin nelze pokračovat v polotovarech a recepturách.'
   );
+  formCard.innerHTML = '';
 
   const form = document.createElement('form');
   form.className = 'form-grid materials-form';
@@ -155,7 +156,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     </div>
   `;
   formCard.appendChild(form);
-  formCard.style.display = 'none';
+  formCard.classList.add('materials-modal-card');
 
   const nameDatalist = document.createElement('datalist');
   nameDatalist.id = 'crm-material-name-list';
@@ -225,10 +226,9 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
   toggleBtn.textContent = 'Přidat surovinu';
-  toggleBtn.className = 'crm-btn crm-btn-primary';
+  toggleBtn.className = 'crm-btn crm-btn-primary materials-add-btn';
   toggleWrap.appendChild(toggleBtn);
 
-  grid.appendChild(formCard);
   grid.appendChild(listCard);
 
   container.innerHTML = '';
@@ -244,6 +244,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   const defaultColumns = getDefaultColumns();
   let columns = normalizeColumns(defaultColumns);
   let columnModal = null;
+  let materialModal = null;
 
   const submitBtn = form.querySelector('button[data-role="save"]');
   const cancelEditBtn = form.querySelector('button[data-role="cancel-edit"]');
@@ -271,6 +272,77 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   const vocInput = form.elements.namedItem('voc');
   const safetyInput = form.elements.namedItem('safety');
   const noteInput = form.elements.namedItem('note');
+
+  function buildMaterialModal() {
+    if (materialModal) return materialModal;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay materials-modal-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal materials-modal';
+
+    const header = document.createElement('div');
+    header.className = 'modal-header materials-modal-header';
+    const titleWrap = document.createElement('div');
+    titleWrap.innerHTML = `
+      <p class="modal-eyebrow">Nová surovina</p>
+      <h3>${labels.addMaterial}</h3>
+      <p class="materials-modal-subtitle">Zadejte parametry suroviny a uložte ji.</p>
+    `;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'modal-close';
+    closeBtn.innerHTML = '&times;';
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement('div');
+    body.className = 'materials-modal-body';
+    body.appendChild(formCard);
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    overlay.appendChild(modal);
+
+    const handleClose = () => {
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+      if (!document.querySelector('.modal-overlay')) {
+        document.body.classList.remove('modal-open');
+      }
+    };
+
+    closeBtn.addEventListener('click', handleClose);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        handleClose();
+      }
+    });
+
+    materialModal = { overlay, modal, handleClose };
+    return materialModal;
+  }
+
+  function openMaterialModal() {
+    const modalObj = buildMaterialModal();
+    if (!modalObj.overlay.isConnected) {
+      document.body.appendChild(modalObj.overlay);
+    }
+    document.body.classList.add('modal-open');
+    setTimeout(() => {
+      nameInput?.focus();
+    }, 50);
+  }
+
+  function closeMaterialModal() {
+    if (materialModal) {
+      materialModal.handleClose();
+    }
+  }
 
   nameInput.setAttribute('list', nameDatalist.id);
   supplierInput.setAttribute('list', supplierDatalist.id);
@@ -307,8 +379,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     editBtn.textContent = 'Upravit';
     editBtn.addEventListener('click', () => {
       fillFormFromMaterial(material);
-      showForm();
-      formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      openMaterialModal();
     });
 
     const delBtn = document.createElement('button');
@@ -399,33 +470,17 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     ];
   }
 
-  function showForm() {
-    formCard.style.display = '';
-    toggleBtn.textContent = 'Skrýt formulář';
-  }
-
-  function hideForm() {
-    formCard.style.display = 'none';
-    toggleBtn.textContent = 'Přidat surovinu';
-  }
-
-  toggleBtn.addEventListener('click', () => {
-    const hidden = formCard.style.display === 'none';
-    if (hidden) {
-      resetFormState();
-      showForm();
-      formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      hideForm();
-    }
-  });
-
   function resetFormState() {
     form.reset();
     editingId = null;
     submitBtn.textContent = 'Uložit surovinu';
     cancelEditBtn.style.display = 'none';
   }
+
+  toggleBtn.addEventListener('click', () => {
+    resetFormState();
+    openMaterialModal();
+  });
 
   function fillFormFromMaterial(material) {
     if (!material) return;
@@ -657,7 +712,9 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   function closeColumnModal() {
     if (columnModal) {
       columnModal.remove();
-      document.body.classList.remove('modal-open');
+      if (!document.querySelector('.modal-overlay')) {
+        document.body.classList.remove('modal-open');
+      }
       columnModal = null;
     }
   }
@@ -939,6 +996,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       await apiPost(MATERIALS_API, payload);
       showToast(editingId ? 'Změny suroviny byly uloženy.' : 'Surovina uložena.');
       resetFormState();
+      closeMaterialModal();
       await reload();
     } catch (err) {
       console.error(err);
@@ -948,6 +1006,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
 
   cancelEditBtn.addEventListener('click', () => {
     resetFormState();
+    closeMaterialModal();
   });
 
   await loadColumnsConfig();
