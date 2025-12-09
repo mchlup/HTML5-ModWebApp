@@ -3,20 +3,52 @@ session_start();
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
 
+$logDir = __DIR__ . '/../logs';
+define('APP_LOG_DIR', $logDir);
+define('APP_LOG_FILE', APP_LOG_DIR . '/app.log');
+define('APP_LOG_MAX_BYTES', 5 * 1024 * 1024); // 5 MB
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $user = $_SESSION['username'] ?? 'anonymous';
 $role = $_SESSION['role'] ?? 'guest';
 
 ensureLoggedIn();
 
+function rotateLogFile(): void
+{
+    if (!file_exists(APP_LOG_FILE)) {
+        return;
+    }
+
+    clearstatcache(true, APP_LOG_FILE);
+    $size = filesize(APP_LOG_FILE);
+    if ($size !== false && $size > APP_LOG_MAX_BYTES) {
+        $timestamp = date('Ymd-His');
+        $rotated = sprintf('%s/app-%s.log', APP_LOG_DIR, $timestamp);
+        @rename(APP_LOG_FILE, $rotated);
+    }
+}
+
 function writeFileLog(array $entry): void
 {
-    $dir = __DIR__ . '/../logs';
-    if (!is_dir($dir)) {
-        mkdir($dir, 0777, true);
+    if (!is_dir(APP_LOG_DIR)) {
+        mkdir(APP_LOG_DIR, 0777, true);
     }
+
+    rotateLogFile();
+
     $line = json_encode($entry, JSON_UNESCAPED_UNICODE);
-    file_put_contents($dir . '/app.log', $line . PHP_EOL, FILE_APPEND);
+    $handle = fopen(APP_LOG_FILE, 'a');
+    if ($handle === false) {
+        return;
+    }
+
+    if (flock($handle, LOCK_EX)) {
+        fwrite($handle, $line . PHP_EOL);
+        fflush($handle);
+        flock($handle, LOCK_UN);
+    }
+    fclose($handle);
 }
 
 try {
@@ -84,7 +116,7 @@ if ($method === 'GET') {
         jsonResponse(['success' => true, 'logs' => $logs]);
     }
 
-    $file = __DIR__ . '/../logs/app.log';
+    $file = APP_LOG_FILE;
     $logs = [];
     if (file_exists($file)) {
         $lines = array_slice(file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES), -100);
