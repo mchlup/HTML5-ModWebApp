@@ -163,7 +163,15 @@ export async function loadModuleConfig(moduleName) {
 }
 
 export async function saveRuntimeConfig(config) {
-  const payload = Array.isArray(config?.enabledModules) ? config.enabledModules : [];
+  const payload = Array.isArray(config?.enabledModules)
+    ? Array.from(
+        new Set(
+          config.enabledModules
+            .map((id) => (typeof id === "string" ? id.trim() : String(id || "")))
+            .filter(Boolean)
+        )
+      )
+    : [];
   try {
     const res = await requestWithCsrf(MODULES_ENDPOINT, {
       method: "POST",
