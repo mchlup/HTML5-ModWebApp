@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS crm_materials (
   oil VARCHAR(100) NULL,             -- typ oleje / olejova faze
   voc DECIMAL(10,3) NULL,            -- VOC (g/l)
   safety VARCHAR(255) NULL,          -- napr. H315, H319
-  note TEXT NULL,
+  note TEXT NULL,                    -- poznamka
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_crm_materials_code (code),
   KEY idx_crm_materials_name (name)
@@ -83,7 +83,13 @@ CREATE TABLE IF NOT EXISTS crm_orders (
 -- MIGRACE PRO STARE INSTALACE
 -- Pokud tabulka crm_materials existuje, ale nema nove sloupce, timhle se doplni.
 ALTER TABLE crm_materials
+  ADD COLUMN IF NOT EXISTS supplier VARCHAR(255) NULL AFTER name,
+  ADD COLUMN IF NOT EXISTS price DECIMAL(12,2) NULL AFTER supplier,
+  ADD COLUMN IF NOT EXISTS density DECIMAL(10,3) NULL AFTER price,
   ADD COLUMN IF NOT EXISTS solids DECIMAL(5,2) NULL AFTER density,
   ADD COLUMN IF NOT EXISTS okp VARCHAR(50) NULL AFTER solids,
-  ADD COLUMN IF NOT EXISTS oil VARCHAR(100) NULL AFTER okp;
+  ADD COLUMN IF NOT EXISTS oil VARCHAR(100) NULL AFTER okp,
+  ADD COLUMN IF NOT EXISTS voc DECIMAL(10,3) NULL AFTER oil,
+  ADD COLUMN IF NOT EXISTS safety VARCHAR(255) NULL AFTER voc,
+  ADD COLUMN IF NOT EXISTS note TEXT NULL AFTER safety;
 

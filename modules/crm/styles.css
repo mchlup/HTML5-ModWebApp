@@ -1,0 +1,195 @@
+/* CRM – wrapper modulu */
+.crm-module {
+}
+
+/* SUROVINY – horní tlačítko + layout */
+.materials-toggle {
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.materials-toggle button {
+  min-width: 180px;
+}
+
+.materials-layout {
+  gap: 1rem;
+}
+
+/* toolbar nad tabulkou */
+.materials-toolbar-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.materials-filter {
+  flex: 1 1 220px;
+  max-width: 420px;
+}
+
+.materials-filter-label {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.15rem;
+}
+
+/* scrollovatelná tabulka */
+.table-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* zhuštění řádků tabulky surovin */
+.materials-table tbody tr td {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+/* Poznámka – zkrácené zobrazení v jednom řádku */
+.materials-table td:nth-child(5) {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* kompaktní text parametrů v jednom sloupci */
+.materials-params-text {
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  opacity: 0.9;
+  word-break: break-word;
+}
+
+/* pro jistotu ponechány starší selektory – kdyby je něco používalo */
+.materials-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  align-items: center;
+}
+
+.materials-params-item {
+  font-size: 0.8rem;
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+/* třídění – kliknutelné hlavičky */
+.materials-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.materials-table th.sortable::after {
+  content: '⇅';
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+  opacity: 0.4;
+}
+
+.materials-table th.sortable.sorted-asc::after {
+  content: '▲';
+  opacity: 0.9;
+}
+
+.materials-table th.sortable.sorted-desc::after {
+  content: '▼';
+  opacity: 0.9;
+}
+
+/* stránkování pod tabulkou surovin */
+.materials-pagination {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.materials-pagination button {
+  min-width: auto;
+  padding: 0.25rem 0.6rem;
+}
+
+.materials-page-info {
+  opacity: 0.8;
+}
+
+/* CRM – vzhled tlačítek (Přidat surovinu, Upravit, Smazat, stránkování) */
+.crm-module .crm-btn,
+button.crm-btn {
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.85rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.crm-module .crm-btn-sm,
+button.crm-btn.crm-btn-sm {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.crm-module .crm-btn-primary,
+button.crm-btn.crm-btn-primary {
+  background-color: var(--accent-color, #2563eb);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.crm-module .crm-btn-primary:hover,
+button.crm-btn.crm-btn-primary:hover {
+  background-color: var(--accent-color-strong, #1d4ed8);
+  transform: translateY(-1px);
+}
+
+.crm-module .crm-btn-secondary,
+button.crm-btn.crm-btn-secondary {
+  background-color: transparent;
+  color: inherit;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.crm-module .crm-btn-secondary:hover,
+button.crm-btn.crm-btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.crm-module .crm-btn-danger,
+button.crm-btn.crm-btn-danger {
+  background-color: #b91c1c;
+  color: #fff;
+  border-color: #dc2626;
+}
+
+.crm-module .crm-btn-danger:hover,
+button.crm-btn.crm-btn-danger:hover {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.crm-module .crm-btn:disabled,
+.crm-module .crm-btn[disabled],
+button.crm-btn:disabled,
+button.crm-btn[disabled] {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+

@@ -45,7 +45,8 @@ async function apiDelete(url) {
 function loadList(key) {
   try {
     const raw = localStorage.getItem(key);
-    return Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     return [];
   }
@@ -79,13 +80,6 @@ function createPill(text, type = 'default') {
   return span;
 }
 
-function createBadge(text, type = 'default') {
-  const span = document.createElement('span');
-  span.className = `badge badge-${type}`;
-  span.textContent = text;
-  return span;
-}
-
 function renderEmptyState(card, message) {
   const empty = document.createElement('p');
   empty.className = 'muted';
@@ -94,15 +88,44 @@ function renderEmptyState(card, message) {
 }
 
 /**
+ * Vygeneruje nový kód suroviny ve formátu YY#### podle roku a pořadí.
+ * Použije existující kódy v seznamu materials.
+ */
+function generateMaterialCode(materials) {
+  const now = new Date();
+  const yearShort = String(now.getFullYear()).slice(-2); // např. "25"
+  const prefix = yearShort;
+
+  let maxSeq = 0;
+  materials.forEach((m) => {
+    if (!m.code) return;
+    const code = String(m.code);
+    if (!code.startsWith(prefix)) return;
+
+    const tailRaw = code.slice(prefix.length);
+    if (!tailRaw) return;
+    const tail = tailRaw.replace(/^0+/, '') || '0';
+    const n = parseInt(tail, 10);
+    if (!Number.isNaN(n) && n > maxSeq) {
+      maxSeq = n;
+    }
+  });
+
+  const next = maxSeq + 1;
+  const seqStr = String(next).padStart(4, '0');
+  return prefix + seqStr;
+}
+
+/**
  * SUROVINY – DB přes MATERIALS_API
- * - responzivní rozložení polí
- * - CRUD včetně editace
- * - filtrování a scrollovatelný seznam pro větší počet záznamů
  */
 function renderMaterials(container) {
+  const PAGE_SIZE = 20;
+
   const grid = document.createElement('div');
   grid.className = 'form-grid materials-layout';
 
+  // karta s formulářem – výchozí stav skrytý, ovládá se tlačítkem
   const formCard = createCard(
     labels.addMaterial,
     'Zadejte parametry suroviny a uložte ji – bez uložených surovin nelze pokračovat v polotovarech a recepturách.'
@@ -110,8 +133,6 @@ function renderMaterials(container) {
 
   const form = document.createElement('form');
   form.className = 'form-grid materials-form';
-
-  // základní grid formuláře (jeden sloupec, hezké mezery)
   form.style.display = 'grid';
   form.style.gridTemplateColumns = '1fr';
   form.style.rowGap = '0.75rem';
@@ -128,7 +149,7 @@ function renderMaterials(container) {
       </label>
       <label>
         Kód / Dodací číslo
-        <input name="code" required placeholder="ACR-245" />
+        <input name="code" placeholder="(bude doplněn automaticky, případně zadejte vlastní)" />
       </label>
     </div>
 
@@ -187,24 +208,30 @@ function renderMaterials(container) {
     </div>
   `;
   formCard.appendChild(form);
-  grid.appendChild(formCard);
+  formCard.style.display = 'none'; // výchozí stav skrytý
+
+  // datalists pro našeptávání názvů a dodavatelů
+  const nameDatalist = document.createElement('datalist');
+  nameDatalist.id = 'crm-material-name-list';
+  const supplierDatalist = document.createElement('datalist');
+  supplierDatalist.id = 'crm-material-supplier-list';
+  formCard.appendChild(nameDatalist);
+  formCard.appendChild(supplierDatalist);
 
   const listCard = createCard(
     'Evidence surovin',
     'Přehled surovin, které lze dále použít v polotovarech, recepturách a zakázkách.'
   );
 
-  // toolbar nad tabulkou – filtr + počet záznamů
   const toolbar = document.createElement('div');
   toolbar.className = 'table-toolbar';
-  toolbar.style.marginBottom = '0.75rem';
   toolbar.innerHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center;justify-content:space-between;">
-      <label style="flex:1 1 220px;max-width:420px;">
-        <span class="muted" style="display:block;font-size:0.85rem;margin-bottom:0.15rem;">Filtrovat suroviny</span>
+    <div class="materials-toolbar-inner">
+      <label class="materials-filter">
+        <span class="muted materials-filter-label">Filtrovat suroviny</span>
         <input type="search" name="materialsFilter" placeholder="Hledat podle kódu, názvu nebo dodavatele" />
       </label>
-      <span class="muted materials-count" style="white-space:nowrap;"></span>
+      <span class="muted materials-count"></span>
     </div>
   `;
   listCard.appendChild(toolbar);
@@ -214,40 +241,78 @@ function renderMaterials(container) {
   const head = document.createElement('thead');
   head.innerHTML = `
     <tr>
-      <th>Kód</th>
-      <th>Název</th>
-      <th>Dodavatel</th>
+      <th data-sort="code" class="sortable">Kód</th>
+      <th data-sort="name" class="sortable">Název</th>
+      <th data-sort="supplier" class="sortable">Dodavatel</th>
       <th>Cena</th>
+      <th>Poznámka</th>
       <th>Parametry</th>
-      <th style="width: 1%; white-space: nowrap;"></th>
+      <th style="width:1%;white-space:nowrap;"></th>
     </tr>
   `;
   const tbody = document.createElement('tbody');
   table.appendChild(head);
   table.appendChild(tbody);
 
-  // scrollovatelný wrapper pro tabulku
   const tableWrapper = document.createElement('div');
   tableWrapper.className = 'table-scroll';
-  tableWrapper.style.maxHeight = '380px';
-  tableWrapper.style.overflowY = 'auto';
-  tableWrapper.style.overflowX = 'hidden';
   tableWrapper.appendChild(table);
 
   listCard.appendChild(tableWrapper);
+
+  // stránkování
+  const pagination = document.createElement('div');
+  pagination.className = 'materials-pagination';
+  pagination.innerHTML = `
+    <button type="button" data-page="prev">‹ Předchozí</button>
+    <span class="materials-page-info"></span>
+    <button type="button" data-page="next">Další ›</button>
+  `;
+  listCard.appendChild(pagination);
+
+  const toggleWrap = document.createElement('div');
+  toggleWrap.className = 'form-actions materials-toggle';
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.textContent = 'Přidat surovinu';
+  toggleBtn.className = 'crm-btn crm-btn-primary';
+  toggleWrap.appendChild(toggleBtn);
+
+  grid.appendChild(formCard);
   grid.appendChild(listCard);
 
   container.innerHTML = '';
+  container.appendChild(toggleWrap);
   container.appendChild(grid);
 
-  // --- stav pro editaci & filtrování ---
+  // --- stav / reference ---
   let materials = [];
+  let filtered = [];
   let editingId = null;
+  let currentPage = 1;
+  let sortBy = 'code'; // 'code' | 'name' | 'supplier'
+  let sortDir = 'asc'; // 'asc' | 'desc'
 
   const submitBtn = form.querySelector('button[data-role="save"]');
   const cancelEditBtn = form.querySelector('button[data-role="cancel-edit"]');
   const filterInput = toolbar.querySelector('input[name="materialsFilter"]');
   const countLabel = toolbar.querySelector('.materials-count');
+
+  const pageInfo = pagination.querySelector('.materials-page-info');
+  const prevBtn = pagination.querySelector('[data-page="prev"]');
+  const nextBtn = pagination.querySelector('[data-page="next"]');
+
+  // CRM vzhled pro tlačítka
+  submitBtn.classList.add('crm-btn', 'crm-btn-primary');
+  cancelEditBtn.classList.add('crm-btn', 'crm-btn-secondary');
+  prevBtn.classList.add('crm-btn', 'crm-btn-secondary', 'crm-btn-sm');
+  nextBtn.classList.add('crm-btn', 'crm-btn-secondary', 'crm-btn-sm');
+
+  const sortHeaders = head.querySelectorAll('th[data-sort]');
+  const defaultSortHeader = head.querySelector('th[data-sort="code"]');
+  if (defaultSortHeader) {
+    defaultSortHeader.classList.add('sorted-asc');
+  }
 
   const nameInput = form.elements.namedItem('name');
   const codeInput = form.elements.namedItem('code');
@@ -260,6 +325,31 @@ function renderMaterials(container) {
   const vocInput = form.elements.namedItem('voc');
   const safetyInput = form.elements.namedItem('safety');
   const noteInput = form.elements.namedItem('note');
+
+  // napojení našeptávačů
+  nameInput.setAttribute('list', nameDatalist.id);
+  supplierInput.setAttribute('list', supplierDatalist.id);
+
+  function showForm() {
+    formCard.style.display = '';
+    toggleBtn.textContent = 'Skrýt formulář';
+  }
+
+  function hideForm() {
+    formCard.style.display = 'none';
+    toggleBtn.textContent = 'Přidat surovinu';
+  }
+
+  toggleBtn.addEventListener('click', () => {
+    const hidden = formCard.style.display === 'none';
+    if (hidden) {
+      resetFormState();
+      showForm();
+      formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      hideForm();
+    }
+  });
 
   function resetFormState() {
     form.reset();
@@ -288,18 +378,57 @@ function renderMaterials(container) {
     cancelEditBtn.style.display = '';
   }
 
-  function renderRows(source) {
-    if (!Array.isArray(source) || source.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6">${labels.emptyMaterials}</td></tr>`;
-      countLabel.textContent = materials.length
-        ? `0 z ${materials.length} položek`
-        : '0 položek';
+  function updateSuggestionLists() {
+    const nameSet = new Set();
+    const supplierSet = new Set();
+
+    materials.forEach((m) => {
+      if (m.name) nameSet.add(m.name.trim());
+      if (m.supplier) supplierSet.add(m.supplier.trim());
+    });
+
+    const names = Array.from(nameSet).sort((a, b) =>
+      a.localeCompare(b, 'cs', { sensitivity: 'base' })
+    );
+    const suppliers = Array.from(supplierSet).sort((a, b) =>
+      a.localeCompare(b, 'cs', { sensitivity: 'base' })
+    );
+
+    nameDatalist.innerHTML = names.map((n) => `<option value="${n}"></option>`).join('');
+    supplierDatalist.innerHTML = suppliers
+      .map((s) => `<option value="${s}"></option>`)
+      .join('');
+  }
+
+  function sortList(list) {
+    const key = sortBy;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      const va = (a[key] || '').toString().toLowerCase();
+      const vb = (b[key] || '').toString().toLowerCase();
+      return va.localeCompare(vb, 'cs', { sensitivity: 'base' }) * dir;
+    });
+  }
+
+  function truncate(text, maxLen) {
+    if (!text) return '';
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen - 1) + '…';
+  }
+
+  function renderRows(pageItems, total, pageCount) {
+    if (!Array.isArray(pageItems) || total === 0) {
+      tbody.innerHTML = `<tr><td colspan="7">${labels.emptyMaterials}</td></tr>`;
+      countLabel.textContent = '0 položek';
+      pageInfo.textContent = '';
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
       return;
     }
 
     tbody.innerHTML = '';
 
-    source.forEach((m) => {
+    pageItems.forEach((m) => {
       const tr = document.createElement('tr');
       const priceText =
         typeof m.price === 'number'
@@ -309,46 +438,43 @@ function renderMaterials(container) {
           : '—';
       const densityText = m.density != null ? m.density : '–';
       const solidsText = m.solids != null ? `${m.solids} %` : '–';
-      const vocText = m.voc != null ? m.voc : '–';
+      const vocText = m.voc != null ? `${m.voc} g/l` : '–';
+      const noteText = m.note ? truncate(m.note, 80) : '—';
 
-      let paramsHtml = '<div class="materials-params" style="display:flex;flex-direction:column;gap:0.15rem;font-size:0.9em;">';
-      paramsHtml += `<div>Hustota: ${densityText}</div>`;
-      paramsHtml += `<div>Sušina: ${solidsText}</div>`;
-      paramsHtml += `<div>VOC: ${vocText} g/l</div>`;
-      if (m.okp) {
-        paramsHtml += `<div>OKP / kategorie: ${m.okp}</div>`;
-      }
-      if (m.oil) {
-        paramsHtml += `<div>Olej / olejová fáze: ${m.oil}</div>`;
-      }
-      if (m.safety) {
-        paramsHtml += `<div>Nebezpečnost / SDS: ${m.safety}</div>`;
-      }
-      paramsHtml += '</div>';
+      const parts = [];
+      parts.push(`Hustota: ${densityText}`);
+      parts.push(`Sušina: ${solidsText}`);
+      parts.push(`VOC: ${vocText}`);
+      if (m.okp) parts.push(`OKP: ${m.okp}`);
+      if (m.oil) parts.push(`Olej: ${m.oil}`);
+      if (m.safety) parts.push(`SDS: ${m.safety}`);
+      const paramsHtml = `<span class="materials-params-text">${parts.join(' | ')}</span>`;
 
       tr.innerHTML = `
         <td>${m.code || '-'}</td>
         <td>${m.name}</td>
         <td>${m.supplier || '-'}</td>
         <td>${priceText}</td>
+        <td>${noteText}</td>
         <td>${paramsHtml}</td>
-        <td class="form-actions" style="white-space: nowrap;"></td>
+        <td class="form-actions" style="white-space:nowrap;"></td>
       `;
 
       const actionsCell = tr.querySelector('td.form-actions');
 
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
-      editBtn.className = 'secondary';
+      editBtn.className = 'secondary crm-btn crm-btn-secondary crm-btn-sm';
       editBtn.textContent = 'Upravit';
       editBtn.addEventListener('click', () => {
         fillFormFromMaterial(m);
+        showForm();
         formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
 
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
-      delBtn.className = 'danger';
+      delBtn.className = 'danger crm-btn crm-btn-danger crm-btn-sm';
       delBtn.textContent = labels.delete;
       delBtn.addEventListener('click', async () => {
         if (!confirm('Opravdu odstranit tuto surovinu?')) return;
@@ -371,52 +497,76 @@ function renderMaterials(container) {
       tbody.appendChild(tr);
     });
 
-    if (source.length === materials.length) {
-      countLabel.textContent = `${materials.length} položek`;
-    } else {
-      countLabel.textContent = `${source.length} z ${materials.length} položek`;
+    const startIndex = (currentPage - 1) * PAGE_SIZE + 1;
+    const endIndex = Math.min(currentPage * PAGE_SIZE, total);
+    countLabel.textContent = `${total} položek`;
+    pageInfo.textContent = `${startIndex}–${endIndex} z ${total} (strana ${currentPage}/${pageCount})`;
+    prevBtn.disabled = currentPage <= 1;
+    nextBtn.disabled = currentPage >= pageCount;
+  }
+
+  function renderTable() {
+    const total = filtered.length;
+    if (!total) {
+      renderRows([], 0, 0);
+      return;
     }
+    const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (currentPage > pageCount) currentPage = pageCount;
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = filtered.slice(start, start + PAGE_SIZE);
+    renderRows(pageItems, total, pageCount);
   }
 
   function applyFilter() {
     const term = (filterInput.value || '').trim().toLowerCase();
-    if (!term) {
-      renderRows(materials);
-      return;
+    let base = materials;
+
+    if (term) {
+      base = materials.filter((m) => {
+        const code = (m.code || '').toLowerCase();
+        const name = (m.name || '').toLowerCase();
+        const supplier = (m.supplier || '').toLowerCase();
+        const note = (m.note || '').toLowerCase();
+        return (
+          code.includes(term) ||
+          name.includes(term) ||
+          supplier.includes(term) ||
+          note.includes(term)
+        );
+      });
     }
-    const filtered = materials.filter((m) => {
-      const code = (m.code || '').toLowerCase();
-      const name = (m.name || '').toLowerCase();
-      const supplier = (m.supplier || '').toLowerCase();
-      return (
-        code.includes(term) ||
-        name.includes(term) ||
-        supplier.includes(term)
-      );
-    });
-    if (filtered.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6">Žádná surovina neodpovídá filtru.</td></tr>';
-      countLabel.textContent = `0 z ${materials.length} položek`;
-      return;
-    }
-    renderRows(filtered);
+
+    filtered = sortList(base);
+    currentPage = 1;
+    renderTable();
   }
 
   async function reload() {
-    tbody.innerHTML = '<tr><td colspan="6">Načítám…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7">Načítám…</td></tr>';
     countLabel.textContent = '';
+    pageInfo.textContent = '';
+    prevBtn.disabled = true;
+    nextBtn.disabled = true;
+
     try {
       const data = await apiFetch(MATERIALS_API);
       materials = data.materials || data.data || [];
-      if (!materials.length) {
-        renderRows([]);
-        return;
+      saveList(STORAGE_KEYS.rawMaterials, materials);
+
+      updateSuggestionLists();
+      applyFilter();
+
+      // aktualizace horního KPI "Suroviny"
+      const kpiSpan = document.querySelector('.crm-kpi-materials-count');
+      if (kpiSpan) {
+        kpiSpan.textContent = String(materials.length);
       }
-      applyFilter(); // použij aktuální filtr nad čerstvě načtenými daty
     } catch (err) {
       console.error(err);
-      tbody.innerHTML = '<tr><td colspan="6">Chyba při načítání surovin.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7">Chyba při načítání surovin.</td></tr>';
       countLabel.textContent = '';
+      pageInfo.textContent = '';
       showToast(err.message || 'Chyba při načítání surovin.', { type: 'error' });
     }
   }
@@ -425,12 +575,53 @@ function renderMaterials(container) {
     applyFilter();
   });
 
+  // stránkování – tlačítka
+  prevBtn.addEventListener('click', () => {
+    if (currentPage > 1) {
+      currentPage -= 1;
+      renderTable();
+    }
+  });
+
+  nextBtn.addEventListener('click', () => {
+    const total = filtered.length;
+    const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (currentPage < pageCount) {
+      currentPage += 1;
+      renderTable();
+    }
+  });
+
+  // třídění – klik na hlavičku Kód / Název / Dodavatel
+  sortHeaders.forEach((th) => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      if (!col) return;
+      if (sortBy === col) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortBy = col;
+        sortDir = 'asc';
+      }
+
+      // vizuální indikace
+      sortHeaders.forEach((h) => {
+        h.classList.remove('sorted-asc', 'sorted-desc');
+      });
+      th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+
+      applyFilter();
+    });
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+
     const payload = {
       id: editingId || undefined,
-      code: (fd.get('code') || '').trim(),
+      // code se dopočte níže podle situace
+      code: null,
       name: (fd.get('name') || '').trim(),
       supplier: (fd.get('supplier') || '').trim(),
       price: fd.get('price') !== '' ? Number(fd.get('price')) : null,
@@ -443,9 +634,61 @@ function renderMaterials(container) {
       note: (fd.get('note') || '').trim(),
     };
 
-    if (!payload.code || !payload.name) {
-      showToast('Kód a název suroviny jsou povinné.', { type: 'error' });
+    const rawCode = (fd.get('code') || '').trim();
+
+    if (!payload.name) {
+      showToast('Název suroviny je povinný.', { type: 'error' });
       return;
+    }
+
+    // nový záznam bez kódu → automaticky vygenerujeme
+    if (!editingId && !rawCode) {
+      payload.code = generateMaterialCode(materials);
+    } else {
+      payload.code = rawCode || generateMaterialCode(materials);
+    }
+
+    // kontrola duplicit kódu
+    const duplicateCode = materials.find(
+      (m) =>
+        m.code &&
+        String(m.code).toLowerCase() === String(payload.code).toLowerCase() &&
+        m.id !== editingId
+    );
+    if (duplicateCode) {
+      showToast('Surovina s tímto kódem již existuje.', { type: 'error' });
+      return;
+    }
+
+    const lowerName = payload.name.toLowerCase();
+    const lowerSupplier = payload.supplier.toLowerCase();
+
+    // kontrola duplicit názvu
+    const duplicateName = materials.find(
+      (m) =>
+        m.name &&
+        m.name.toLowerCase() === lowerName &&
+        m.id !== editingId
+    );
+    if (duplicateName) {
+      showToast('Surovina s tímto názvem již existuje.', { type: 'error' });
+      return;
+    }
+
+    // kontrola duplicit dodavatele
+    if (payload.supplier) {
+      const duplicateSupplier = materials.find(
+        (m) =>
+          m.supplier &&
+          m.supplier.toLowerCase() === lowerSupplier &&
+          m.id !== editingId
+      );
+      if (duplicateSupplier) {
+        showToast('Tento dodavatel je již evidován u jiné suroviny.', {
+          type: 'error',
+        });
+        return;
+      }
     }
 
     try {
@@ -467,7 +710,7 @@ function renderMaterials(container) {
 }
 
 /**
- * POLOTOVARY – zatím localStorage, navážeme na DB v dalším kroku
+ * POLOTOVARY – zatím localStorage
  */
 function renderIntermediates(container) {
   const materials = loadList(STORAGE_KEYS.rawMaterials);
@@ -981,33 +1224,15 @@ function renderOrders(container) {
 /**
  * KPI + hlavní render
  */
-function createBadgeRow(labelText, valueText) {
-  const row = document.createElement('div');
-  row.className = 'flex-row';
-  row.style.justifyContent = 'space-between';
-
-  const label = document.createElement('span');
-  label.className = 'muted';
-  label.textContent = labelText;
-
-  const value = document.createElement('span');
-  value.className = 'strong';
-  value.textContent = valueText;
-
-  row.appendChild(label);
-  row.appendChild(value);
-  return row;
-}
-
-function buildKpis(materials, intermediates, recipes, orders) {
+function buildKpis(counts) {
   const wrap = document.createElement('div');
   wrap.className = 'dashboard-widgets';
 
   const kpiData = [
-    { label: 'Suroviny', value: materials.length },
-    { label: 'Polotovary', value: intermediates.length },
-    { label: 'Receptury', value: recipes.length },
-    { label: 'Zakázky', value: orders.length },
+    { label: 'Suroviny', value: counts.materials, valueClass: 'crm-kpi-materials-count' },
+    { label: 'Polotovary', value: counts.intermediates },
+    { label: 'Receptury', value: counts.recipes },
+    { label: 'Zakázky', value: counts.orders },
   ];
 
   kpiData.forEach((kpi) => {
@@ -1021,7 +1246,10 @@ function buildKpis(materials, intermediates, recipes, orders) {
 
     const value = document.createElement('div');
     value.className = 'kpi-value';
-    value.textContent = kpi.value.toString();
+    if (kpi.valueClass) {
+      value.classList.add(kpi.valueClass);
+    }
+    value.textContent = String(kpi.value ?? 0);
     card.appendChild(value);
 
     wrap.appendChild(card);
@@ -1030,14 +1258,13 @@ function buildKpis(materials, intermediates, recipes, orders) {
   return wrap;
 }
 
-function renderCrm(container, context = {}) {
-  const materials = loadList(STORAGE_KEYS.rawMaterials);
+function renderCrm(container) {
   const intermediates = loadList(STORAGE_KEYS.intermediates);
   const recipes = loadList(STORAGE_KEYS.recipes);
   const orders = loadList(STORAGE_KEYS.orders);
 
   const wrap = document.createElement('div');
-  wrap.className = 'dashboard';
+  wrap.className = 'dashboard crm-module';
 
   const title = document.createElement('h1');
   title.textContent = labels.title;
@@ -1048,7 +1275,14 @@ function renderCrm(container, context = {}) {
   subtitle.textContent = labels.subtitle;
   wrap.appendChild(subtitle);
 
-  const kpis = buildKpis(materials, intermediates, recipes, orders);
+  const counts = {
+    materials: 0, // skutečný počet dopočítá renderMaterials po načtení z API
+    intermediates: intermediates.length,
+    recipes: recipes.length,
+    orders: orders.length,
+  };
+
+  const kpis = buildKpis(counts);
   wrap.appendChild(kpis);
 
   const nav = document.createElement('div');
