@@ -72,7 +72,7 @@ export function getRuntimeConfig() {
 }
 
 export function setRuntimeConfig(cfg) {
-  return persistRuntimeConfig(cfg);
+  return persistRuntimeConfig({ ...runtimeConfig, ...(cfg || {}) });
 }
 
 export async function loadRuntimeConfig(options = {}) {
