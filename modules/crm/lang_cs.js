@@ -1,5 +1,5 @@
 export default {
-  title: 'CRM výroby nátěrových hmot',
+  title: 'Výroba nátěrových hmot',
   subtitle: 'Sjednocený pohled na suroviny, polotovary a finální zakázky.',
   materials: 'Suroviny',
   suppliers: 'Dodavatelé',
