@@ -237,6 +237,9 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
 
   let materials = [];
   let filtered = [];
+  let totalCount = 0;
+  let pageSize = PAGE_SIZE;
+  let currentSearchTerm = '';
   let editingId = null;
   let currentPage = 1;
   let sortBy = 'code';
@@ -633,8 +636,9 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       tbody.appendChild(tr);
     });
 
-    const startIndex = (currentPage - 1) * PAGE_SIZE + 1;
-    const endIndex = Math.min(currentPage * PAGE_SIZE, total);
+    const effectivePageSize = pageSize || PAGE_SIZE;
+    const startIndex = (currentPage - 1) * effectivePageSize + 1;
+    const endIndex = Math.min(currentPage * effectivePageSize, total);
     countLabel.textContent = `${total} položek`;
     pageInfo.textContent = `${startIndex}–${endIndex} z ${total} (strana ${currentPage}/${pageCount})`;
     prevBtn.disabled = currentPage <= 1;
@@ -642,40 +646,22 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   }
 
   function renderTable() {
-    const total = filtered.length;
-    if (!total) {
+    const total = typeof totalCount === 'number' ? totalCount : materials.length;
+    if (!total || materials.length === 0) {
       renderRows([], 0, 0);
       return;
     }
-    const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const effectivePageSize = pageSize || PAGE_SIZE;
+    const pageCount = Math.max(1, Math.ceil(total / effectivePageSize));
     if (currentPage > pageCount) currentPage = pageCount;
-    const start = (currentPage - 1) * PAGE_SIZE;
-    const pageItems = filtered.slice(start, start + PAGE_SIZE);
-    renderRows(pageItems, total, pageCount);
+    renderRows(materials, total, pageCount);
   }
 
   function applyFilter() {
     const term = (filterInput.value || '').trim().toLowerCase();
-    let base = materials;
-
-    if (term) {
-      base = materials.filter((m) => {
-        const code = (m.code || '').toLowerCase();
-        const name = (m.name || '').toLowerCase();
-        const supplier = (m.supplier || '').toLowerCase();
-        const note = (m.note || '').toLowerCase();
-        return (
-          code.includes(term) ||
-          name.includes(term) ||
-          supplier.includes(term) ||
-          note.includes(term)
-        );
-      });
-    }
-
-    filtered = sortList(base);
+    currentSearchTerm = term;
     currentPage = 1;
-    renderTable();
+    reload();
   }
 
   function normalizeColumns(list) {
@@ -894,15 +880,28 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     nextBtn.disabled = true;
 
     try {
-      const data = await apiFetch(MATERIALS_API);
-      materials = data.materials || data.data || [];
-      saveList(STORAGE_KEYS.rawMaterials, materials);
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        pageSize: String(pageSize),
+        search: currentSearchTerm || '',
+        sortBy,
+        sortDir,
+      });
 
+      const data = await apiFetch(`${MATERIALS_API}?${params.toString()}`);
+      const payload = data.data || {};
+      materials = payload.items || data.materials || [];
+      totalCount =
+        typeof payload.totalCount === 'number' ? payload.totalCount : materials.length;
+      currentPage = typeof payload.page === 'number' ? payload.page : currentPage;
+      pageSize = typeof payload.pageSize === 'number' ? payload.pageSize : pageSize;
+
+      saveList(STORAGE_KEYS.rawMaterials, materials);
       updateSuggestionLists();
-      applyFilter();
+      renderTable();
 
       if (typeof onMaterialCountChange === 'function') {
-        onMaterialCountChange(materials.length);
+        onMaterialCountChange(totalCount);
       }
     } catch (err) {
       console.error(err);
@@ -910,6 +909,8 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       tbody.innerHTML = `<tr><td colspan="${errorColspan}">Chyba při načítání surovin.</td></tr>`;
       countLabel.textContent = '';
       pageInfo.textContent = '';
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
       showToast(err.message || 'Chyba při načítání surovin.', { type: 'error' });
     }
   }
@@ -921,16 +922,17 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   prevBtn.addEventListener('click', () => {
     if (currentPage > 1) {
       currentPage -= 1;
-      renderTable();
+      reload();
     }
   });
 
   nextBtn.addEventListener('click', () => {
-    const total = filtered.length;
-    const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const total = typeof totalCount === 'number' ? totalCount : materials.length;
+    const effectivePageSize = pageSize || PAGE_SIZE;
+    const pageCount = Math.max(1, Math.ceil(total / effectivePageSize));
     if (currentPage < pageCount) {
       currentPage += 1;
-      renderTable();
+      reload();
     }
   });
 
