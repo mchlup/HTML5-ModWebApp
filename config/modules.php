@@ -4,6 +4,7 @@ session_start();
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/app_utils.php';
+require_once __DIR__ . '/schema_modules.php';
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $role = $_SESSION['role'] ?? 'guest';
@@ -119,8 +120,9 @@ if ($method === 'GET') {
     $usedDb      = false;
 
     // Pokud je uživatel přihlášen a DB je k dispozici, zkusíme stáhnout konfiguraci z DB
-    if ($isAuthenticated && $dbAvailable && $pdo instanceof PDO && dbHasTable($pdo, 'app_modules')) {
+    if ($isAuthenticated && $dbAvailable && $pdo instanceof PDO && modulesTableExists($pdo)) {
         try {
+            ensureModulesTableSchema($pdo);
             try {
                 $stmt = $pdo->query('SELECT id, name, enabled, category, sort_order, description, version FROM app_modules');
             } catch (Throwable $e) {
@@ -245,15 +247,7 @@ if ($method === 'POST') {
     try {
         $pdo->beginTransaction();
 
-        $pdo->exec(
-            'CREATE TABLE IF NOT EXISTS app_modules (
-                id VARCHAR(190) PRIMARY KEY,
-                name VARCHAR(255) NULL,
-                enabled TINYINT(1) DEFAULT 0,
-                category VARCHAR(100) NULL,
-                sort_order INT DEFAULT 0
-            )'
-        );
+        ensureModulesTableSchema($pdo);
 
         $available = listAvailableModules();
 
@@ -263,42 +257,43 @@ if ($method === 'POST') {
             $name      = $module['name'] ?? $id;
             $category  = $module['category'] ?? null;
             $sortOrder = $module['order'] ?? 0;
+            $description = $module['description'] ?? null;
+            $version   = $module['version'] ?? null;
 
-            $updateSql = 'UPDATE app_modules SET name = ?, category = ?, sort_order = ?, enabled = ? WHERE id = ?';
-            $insertSql = 'INSERT INTO app_modules (id, name, category, sort_order, enabled) VALUES (?, ?, ?, ?, ?)';
+            $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
-            // Zjistíme, jestli záznam už v tabulce existuje
-            $exists = null;
-            try {
-                $check  = $pdo->prepare('SELECT 1 FROM app_modules WHERE id = ? LIMIT 1');
-                $check->execute([$id]);
-                $exists = (bool) $check->fetchColumn();
-            } catch (Throwable $e) {
-                $exists = null;
+            if ($driver === 'sqlite') {
+                $sql = 'INSERT INTO app_modules (id, name, category, sort_order, enabled, description, version)
+                        VALUES (:id, :name, :category, :sort_order, :enabled, :description, :version)
+                        ON CONFLICT(id) DO UPDATE SET
+                            name = excluded.name,
+                            category = excluded.category,
+                            sort_order = excluded.sort_order,
+                            enabled = excluded.enabled,
+                            description = excluded.description,
+                            version = excluded.version';
+            } else {
+                $sql = 'INSERT INTO app_modules (id, name, category, sort_order, enabled, description, version)
+                        VALUES (:id, :name, :category, :sort_order, :enabled, :description, :version)
+                        ON DUPLICATE KEY UPDATE
+                            name = VALUES(name),
+                            category = VALUES(category),
+                            sort_order = VALUES(sort_order),
+                            enabled = VALUES(enabled),
+                            description = VALUES(description),
+                            version = VALUES(version)';
             }
 
-            // Pokud záznam existuje, provedeme pouze UPDATE
-            if ($exists === true) {
-                try {
-                    $update = $pdo->prepare($updateSql);
-                    $update->execute([$name, $category, $sortOrder, $isEnabled, $id]);
-                } catch (Throwable $e) {
-                    // Starší (nebo minimalistické) schéma bez category/sort_order nebo bez sloupce name
-                    $update = $pdo->prepare('UPDATE app_modules SET enabled = ? WHERE id = ?');
-                    $update->execute([$isEnabled, $id]);
-                }
-                continue;
-            }
-
-            // Pokud záznam zjevně neexistuje (nebo jsme to nezjistili), pokusíme se o INSERT
-            try {
-                $insert = $pdo->prepare($insertSql);
-                $insert->execute([$id, $name, $category, $sortOrder, $isEnabled]);
-            } catch (Throwable $e) {
-                // fallback na starší schéma bez category/sort_order nebo bez sloupce name
-                $insert = $pdo->prepare('INSERT INTO app_modules (id, enabled) VALUES (?, ?)');
-                $insert->execute([$id, $isEnabled]);
-            }
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                ':id' => $id,
+                ':name' => $name,
+                ':category' => $category,
+                ':sort_order' => $sortOrder,
+                ':enabled' => $isEnabled,
+                ':description' => $description,
+                ':version' => $version,
+            ]);
         }
         $pdo->commit();
 
@@ -321,10 +316,18 @@ if ($method === 'POST') {
         }
         // Zapíšeme detail chyby do PHP error logu pro snazší diagnostiku
         error_log('[modules.php] Uložení konfigurace modulů selhalo: ' . $e->getMessage());
-        jsonResponse([
+        $errorCode = ($e instanceof PDOException) ? (string) $e->getCode() : '';
+        $status = 500;
+        $response = [
             'success' => false,
             'message' => 'Uložení konfigurace modulů se nezdařilo: ' . $e->getMessage(),
-        ], 500);
+        ];
+        if ($errorCode === '23000') {
+            $response['code'] = 'DUPLICATE_MODULE_ID';
+            $response['message'] = 'Modul se stejným ID již existuje a nelze jej přepsat.';
+            $status = 409;
+        }
+        jsonResponse($response, $status);
     }
 }
 

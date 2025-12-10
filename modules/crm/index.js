@@ -105,16 +105,25 @@ function renderCrm(container, { currentSubId } = {}) {
         nav.querySelectorAll('button').forEach((b) => {
           b.classList.toggle('active', b.dataset.tab === activeTab);
         });
+        renderNavVisibility();
         renderActiveTab();
       }
     });
     nav.appendChild(btn);
   });
 
-  wrap.appendChild(nav);
-
   const content = document.createElement('div');
   content.className = 'tab-content';
+  wrap.appendChild(content);
+
+  const renderNavVisibility = () => {
+    const shouldShowNav = activeTab !== 'suroviny';
+    if (shouldShowNav && !nav.parentNode) {
+      wrap.insertBefore(nav, content);
+    } else if (!shouldShowNav && nav.parentNode) {
+      nav.parentNode.removeChild(nav);
+    }
+  };
 
   function updateKpi(key, value) {
     counts[key] = value;
@@ -162,8 +171,8 @@ function renderCrm(container, { currentSubId } = {}) {
     }
   }
 
+  renderNavVisibility();
   renderActiveTab();
-  wrap.appendChild(content);
 
   container.innerHTML = '';
   container.appendChild(wrap);

@@ -7,4 +7,6 @@ export const STORAGE_KEYS = {
   CSRF_TOKEN: 'app_csrf_token_v4',
 };
 
-export default { STORAGE_KEYS };
+export const RUNTIME_CONFIG_VERSION = 1;
+
+export default { STORAGE_KEYS, RUNTIME_CONFIG_VERSION };
