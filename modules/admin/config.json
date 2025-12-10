@@ -1,7 +1,0 @@
-{
-  "id": "admin",
-  "name": "Administrace",
-  "description": "Správa uživatelů, rolí a oprávnění aplikace.",
-  "version": "1.1.0",
-  "category": "system"
-}

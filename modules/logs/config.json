@@ -1,7 +1,0 @@
-{
-  "id": "logs",
-  "name": "Systémové logy",
-  "description": "Prohlížení a export aplikačních logů.",
-  "version": "1.0.0",
-  "category": "maintenance"
-}

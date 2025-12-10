@@ -1,7 +1,0 @@
-{
-  "id": "config",
-  "name": "Konfigurace",
-  "description": "Nastavení aplikace, databáze a modulů.",
-  "version": "1.2.0",
-  "category": "system"
-}
