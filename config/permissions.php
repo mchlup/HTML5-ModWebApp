@@ -168,6 +168,25 @@ if ($method === 'GET') {
             $modules = listAvailableModules();
         }
 
+        // Odfiltrujeme moduly, které fyzicky neexistují v adresáři /modules
+        $availableModules      = listAvailableModules();
+        $availableModulesById  = [];
+        foreach ($availableModules as $m) {
+            $id = (string) ($m['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $availableModulesById[$id] = $m;
+        }
+
+        $modules = array_values(array_filter(
+            $modules,
+            static function (array $m) use ($availableModulesById): bool {
+                $id = (string) ($m['id'] ?? '');
+                return $id !== '' && isset($availableModulesById[$id]);
+            }
+        ));
+
         // matice oprávnění role × modul
         $permissions = [];
         $stmtPerm = null;
