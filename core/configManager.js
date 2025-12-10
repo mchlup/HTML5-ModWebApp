@@ -1,12 +1,13 @@
-import { STORAGE_KEYS } from "./constants.js";
-import { get as getStore, set as setStore } from "./storageManager.js";
+import { STORAGE_KEYS, RUNTIME_CONFIG_VERSION } from "./constants.js";
+import { get as getStore, set as setStore, remove as removeStore } from "./storageManager.js";
 import { showToast } from "./uiService.js";
-import { requestWithCsrf } from "./authService.js";
+import { apiJson } from "./authService.js";
 
 const APP_CONFIG_URL = "./config/app.php";
 const MODULES_ENDPOINT = "./config/modules.php";
 
 let runtimeConfig = {
+  version: RUNTIME_CONFIG_VERSION,
   enabledModules: [],
   moduleConfig: {},
   users: [],
@@ -16,15 +17,10 @@ let runtimeConfig = {
 };
 let appDefinition = null;
 
-async function fetchJson(url, options) {
-  const res = await fetch(url, options);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
 function normalizeRuntimeConfig(cfg) {
   const enabled = Array.isArray(cfg?.enabledModules) ? cfg.enabledModules : [];
   return {
+    version: RUNTIME_CONFIG_VERSION,
     enabledModules: enabled,
     moduleConfig: cfg?.moduleConfig || {},
     users: Array.isArray(cfg?.users) ? cfg.users : [],
@@ -35,9 +31,25 @@ function normalizeRuntimeConfig(cfg) {
 }
 
 function persistRuntimeConfig(cfg) {
-  runtimeConfig = normalizeRuntimeConfig(cfg || {});
+  runtimeConfig = normalizeRuntimeConfig({ ...cfg, version: RUNTIME_CONFIG_VERSION } || {});
   setStore(STORAGE_KEYS.APP_CONFIG, runtimeConfig);
   return runtimeConfig;
+}
+
+function loadCachedRuntimeConfig() {
+  const raw = getStore(STORAGE_KEYS.APP_CONFIG, { raw: true });
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.version !== RUNTIME_CONFIG_VERSION) {
+      removeStore(STORAGE_KEYS.APP_CONFIG);
+      return null;
+    }
+    return normalizeRuntimeConfig(parsed);
+  } catch (err) {
+    removeStore(STORAGE_KEYS.APP_CONFIG);
+    return null;
+  }
 }
 
 export async function loadAppDefinition() {
@@ -48,7 +60,7 @@ export async function loadAppDefinition() {
     return appDefinition;
   }
   try {
-    const def = await fetchJson(APP_CONFIG_URL, { headers: { Accept: "application/json" } });
+    const def = await apiJson(APP_CONFIG_URL);
     appDefinition = def || {};
     setStore(STORAGE_KEYS.APP_DEFINITION, appDefinition);
     return appDefinition;
@@ -64,7 +76,7 @@ export function getRuntimeConfig() {
   if (runtimeConfig && Array.isArray(runtimeConfig.enabledModules) && runtimeConfig.enabledModules.length) {
     return runtimeConfig;
   }
-  const cached = getStore(STORAGE_KEYS.APP_CONFIG);
+  const cached = loadCachedRuntimeConfig();
   if (cached) {
     runtimeConfig = normalizeRuntimeConfig(cached);
   }
@@ -81,13 +93,7 @@ export async function loadRuntimeConfig(options = {}) {
   }
   try {
     const appDefinition = await loadAppDefinition();
-    const data = await fetchJson(MODULES_ENDPOINT, {
-      headers: { Accept: "application/json" },
-      credentials: "same-origin",
-    });
-    if (data && data.success === false) {
-      throw new Error(data.message || "Načtení konfigurace selhalo");
-    }
+    const data = await apiJson(MODULES_ENDPOINT, { credentials: "same-origin" });
     const modules = Array.isArray(data?.modules) ? data.modules : [];
     const enabledFromResponse = Array.isArray(data?.enabledModules)
       ? data.enabledModules
@@ -125,7 +131,7 @@ export async function ensureRuntimeConfig() {
   }
 
   // Zkusíme načíst cache ze storage – ale vždy se pokusíme i o refresh z backendu
-  const cached = getStore(STORAGE_KEYS.APP_CONFIG);
+  const cached = loadCachedRuntimeConfig();
   if (cached && (!runtimeConfig.enabledModules.length || !runtimeConfig.modules.length)) {
     runtimeConfig = normalizeRuntimeConfig(cached);
   }
@@ -168,7 +174,7 @@ export async function loadModuleConfig(moduleName) {
       void err;
     }
     try {
-      return await fetchJson(jsonPath, { headers: { Accept: "application/json" } });
+      return await apiJson(jsonPath, { credentials: "same-origin" });
     } catch (err) {
       return null;
     }
@@ -190,16 +196,12 @@ export async function saveRuntimeConfig(config) {
       )
     : [];
   try {
-    const res = await requestWithCsrf(MODULES_ENDPOINT, {
+    await apiJson(MODULES_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify({ enabledModules: payload }),
     });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data?.message || "Uložení selhalo");
-    }
     persistRuntimeConfig({ ...runtimeConfig, enabledModules: payload });
     showToast("Konfigurace modulů byla uložena.");
     return true;
@@ -211,7 +213,15 @@ export async function saveRuntimeConfig(config) {
 }
 
 export function clearRuntimeConfig() {
-  runtimeConfig = { enabledModules: [], moduleConfig: {}, users: [], permissions: {}, modules: [], dbAvailable: false };
+  runtimeConfig = {
+    version: RUNTIME_CONFIG_VERSION,
+    enabledModules: [],
+    moduleConfig: {},
+    users: [],
+    permissions: {},
+    modules: [],
+    dbAvailable: false,
+  };
   setStore(STORAGE_KEYS.APP_CONFIG, runtimeConfig);
 }
 

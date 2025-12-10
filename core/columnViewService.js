@@ -1,4 +1,4 @@
-import { requestWithCsrf } from './authService.js';
+import { apiJson } from './authService.js';
 
 const API_ENDPOINT = './api/user-column-views.php';
 
@@ -53,12 +53,8 @@ export async function loadUserColumns(moduleCode, viewCode, defaultColumns = [])
   const fallback = normalizeColumns(defaultColumns);
   const url = `${API_ENDPOINT}?moduleCode=${encodeURIComponent(moduleCode)}&viewCode=${encodeURIComponent(viewCode)}`;
   try {
-    const res = await fetch(url, { credentials: 'same-origin' });
-    const data = await res.json();
-    if (!res.ok || data.success === false) {
-      return fallback;
-    }
-    const saved = Array.isArray(data.columns) ? data.columns : [];
+    const data = await apiJson(url, { credentials: 'same-origin' });
+    const saved = Array.isArray(data?.columns) ? data.columns : [];
     return mergeColumnConfig(defaultColumns, saved);
   } catch (err) {
     console.warn('Nepodařilo se načíst uživatelské sloupce', err);
@@ -78,26 +74,14 @@ export async function saveUserColumns(moduleCode, viewCode, columns = []) {
     })),
   };
 
-  const res = await requestWithCsrf(API_ENDPOINT, {
+  return apiJson(API_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    const msg = data?.message || 'Uložení nastavení sloupců selhalo.';
-    throw new Error(msg);
-  }
-  return data;
 }
 
 export async function deleteUserColumns(moduleCode, viewCode) {
   const url = `${API_ENDPOINT}?moduleCode=${encodeURIComponent(moduleCode)}&viewCode=${encodeURIComponent(viewCode)}`;
-  const res = await requestWithCsrf(url, { method: 'DELETE' });
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    const msg = data?.message || 'Reset nastavení sloupců selhal.';
-    throw new Error(msg);
-  }
-  return data;
+  return apiJson(url, { method: 'DELETE' });
 }
