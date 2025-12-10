@@ -1,21 +1,19 @@
 import labels from "./lang_cs.js";
 import { registerModule } from "../../core/moduleRegistry.js";
 import { showToast } from "../../core/uiService.js";
+import { apiJson } from "../../core/authService.js";
 
 // Jednoduchý loader logů – můžeš později napojit na skutečný backend endpoint.
 async function fetchLogs() {
   try {
-    const res = await fetch("./config/logs.php", { credentials: "same-origin" });
-    if (!res.ok) {
-      throw new Error("Načtení logů selhalo");
-    }
-    const data = await res.json();
+    const data = await apiJson("./config/logs.php", { method: "GET" });
     if (!data.success) {
       throw new Error(data.message || "Načtení logů selhalo");
     }
     return Array.isArray(data.logs) ? data.logs : [];
   } catch (err) {
     console.warn("Chyba při načítání logů", err);
+    showToast(err.message || "Načtení logů selhalo", { type: "error" });
     return [];
   }
 }

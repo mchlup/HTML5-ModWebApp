@@ -11,6 +11,7 @@ import { on as onEvent } from "./core/eventBus.js";
 import { STORAGE_KEYS } from "./core/constants.js";
 import { showToast } from "./core/uiService.js";
 import { login, loadCurrentUser } from "./core/authService.js";
+import { runMigrations } from "./core/versionService.js";
 
 const root = document.getElementById("app-root");
 let runtimeConfig = getRuntimeConfig();
@@ -324,6 +325,7 @@ onEvent("language:changed", () => {
 
 (async function start() {
   initTheme();
+  runMigrations({ storage: window.localStorage, sessionStorage: window.sessionStorage });
   try {
     const sessionData = await loadCurrentUser();
     if (sessionData && sessionData.user) {

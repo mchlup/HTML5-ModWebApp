@@ -6,6 +6,29 @@ import { renderRecipes } from './recipesPage.js';
 import { renderOrders } from './ordersPage.js';
 import { renderSuppliers } from './suppliersPage.js';
 
+let crmStylesLoaded = false;
+
+function ensureCrmStylesLoaded() {
+  if (crmStylesLoaded) return;
+  crmStylesLoaded = true;
+
+  const href = 'modules/crm/styles.css';
+
+  // Pokud už je CSS připojeno (např. po přepnutí mezi moduly), nic dalšího neděláme
+  const existing = document.querySelector(
+    `link[data-crm-styles="true"][href="${href}"]`
+  );
+  if (existing) {
+    return;
+  }
+
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.dataset.crmStyles = 'true';
+  document.head.appendChild(link);
+}
+
 function buildKpis(counts) {
   const wrap = document.createElement('div');
   wrap.className = 'dashboard-widgets';
@@ -59,6 +82,8 @@ function getInitialCounts() {
 }
 
 function renderCrm(container, { currentSubId } = {}) {
+  // zajistí načtení CSS specifického pro modul CRM
+  ensureCrmStylesLoaded();
   const wrap = document.createElement('div');
   wrap.className = 'dashboard crm-module';
 

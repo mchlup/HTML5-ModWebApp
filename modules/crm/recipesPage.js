@@ -121,6 +121,15 @@ export function renderRecipes(container, { labels, onCountChange } = {}) {
         return;
       }
 
+      const totalShare = composition.reduce(
+        (sum, c) => sum + (Number.isFinite(c.share) ? c.share : 0),
+        0
+      );
+      if (totalShare <= 0) {
+        showToast('Zadejte podíl alespoň u jedné složky receptury.', { type: 'error' });
+        return;
+      }
+
       const entry = {
         id: crypto.randomUUID(),
         name: fd.get('name'),
@@ -143,7 +152,11 @@ export function renderRecipes(container, { labels, onCountChange } = {}) {
   }
   grid.appendChild(formCard);
 
-  const listCard = createCard('Receptury', 'Aktuální finální produkty a jejich složení.');
+  const listCard = createCard(
+    labels.recipesListTitle || 'Receptury',
+    labels.recipesListSubtitle || 'Aktuální finální produkty a jejich složení.'
+  );
+
   if (!recipes.length) {
     renderEmptyState(listCard, labels.emptyRecipes);
   } else {

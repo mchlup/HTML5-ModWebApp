@@ -1,5 +1,5 @@
 import { set as setStore, get as getStore } from './storageManager.js';
-import { STORAGE_KEYS } from './constants.js';
+import { STORAGE_KEYS } from "./constants.js";
 import { setRuntimeConfig } from './configManager.js';
 import { showToast } from './uiService.js';
 
@@ -15,37 +15,46 @@ export async function requestWithCsrf(url, options = {}) {
 }
 
 export async function apiJson(url, options = {}) {
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
-  const hasBody = options.body !== undefined && options.body !== null;
-  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
-  if (hasBody && !isFormData && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
+  const headers = {
+    Accept: "application/json",
+    ...(options.headers || {}),
+  };
+
+  // pokud posíláme JSON payload, nastavíme Content-Type, pokud už není
+  if (options.body && typeof options.body !== "string") {
+    options = {
+      ...options,
+      body: JSON.stringify(options.body),
+    };
+  }
+  if (options.body && !headers["Content-Type"] && !headers["content-type"]) {
+    headers["Content-Type"] = "application/json";
   }
 
-  const response = await requestWithCsrf(url, { ...options, headers });
+  const response = await requestWithCsrf(url, {
+    credentials: "include",
+    ...options,
+    headers,
+  });
 
-  let data;
+  let data = null;
   try {
     data = await response.json();
-  } catch (err) {
-    const message = response.ok
-      ? 'Odpověď serveru není validní JSON.'
-      : `Chybná odpověď serveru (${response.status}).`;
-    throw new Error(message);
+  } catch {
+    // nevalidní / prázdný JSON – necháme data = null
   }
 
-  if (!response.ok) {
-    const message = data?.message || data?.error || `HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
-  if (data && data.success === false) {
-    const message = data.message || 'Požadavek selhal.';
+  if (!response.ok || (data && data.success === false)) {
+    const message = (data && data.message) || `HTTP ${response.status}`;
     const error = new Error(message);
-    if (data.code) {
-      error.code = data.code;
+
+    // rozlišení typických stavů – nadřazené vrstvy na to mohou reagovat (logout / redirect)
+    if (response.status === 401) {
+      error.code = "UNAUTHORIZED";
+    } else if (response.status === 403) {
+      error.code = "FORBIDDEN";
     }
+
     throw error;
   }
 

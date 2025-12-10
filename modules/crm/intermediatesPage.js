@@ -10,10 +10,14 @@ export function renderIntermediates(container, { labels, onCountChange } = {}) {
 
   const formCard = createCard(
     labels.addIntermediate,
-    'Vytvořte polotovary z již evidovaných surovin.'
+    labels.intermediatesIntro || 'Vytvořte polotovary z již evidovaných surovin.'
   );
+  
   if (!materials.length) {
-    renderEmptyState(formCard, labels.emptyIntermediates);
+    const emptyText =
+      labels.emptyIntermediates ||
+      'Nejprve uložte alespoň jednu surovinu, aby bylo možné vytvářet polotovary.';
+    renderEmptyState(formCard, emptyText);
   } else {
     const form = document.createElement('form');
     form.className = 'form-grid crm-two-col';
@@ -115,6 +119,15 @@ export function renderIntermediates(container, { labels, onCountChange } = {}) {
         return;
       }
 
+      const totalShare = composition.reduce(
+        (sum, c) => sum + (Number.isFinite(c.share) ? c.share : 0),
+        0
+      );
+      if (totalShare <= 0) {
+        showToast('Zadejte podíl alespoň u jedné suroviny.', { type: 'error' });
+        return;
+      }
+
       const entry = {
         id: crypto.randomUUID(),
         name: fd.get('name'),
@@ -137,9 +150,16 @@ export function renderIntermediates(container, { labels, onCountChange } = {}) {
   }
   grid.appendChild(formCard);
 
-  const listCard = createCard('Přehled polotovarů', 'Receptury, které využívají uložené suroviny.');
+  // Přehled uložených polotovarů
+  const listCard = createCard(
+    labels.intermediatesListTitle || 'Přehled polotovarů',
+    labels.intermediatesListSubtitle || 'Receptury, které využívají uložené suroviny.'
+  );
+
   if (!intermediates.length) {
-    renderEmptyState(listCard, 'Zatím nejsou evidovány žádné polotovary.');
+    const emptyText =
+      labels.emptyIntermediates || 'Zatím nejsou evidovány žádné polotovary.';
+    renderEmptyState(listCard, emptyText);
   } else {
     const list = document.createElement('div');
     list.className = 'list crm-card-list';

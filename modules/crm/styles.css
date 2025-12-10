@@ -1,3 +1,194 @@
++/* CRM – SUROVINY (materials) */
++
++/* karta s tabulkou surovin */
++.materials-card {
++  margin-top: 1rem;
+}
+
+/* horní řádek: vyhledávání  "Zobrazené sloupce" */
+.materials-toolbar {
+  margin-bottom: 0.9rem; /* mezera mezi toolbarem a tabulkou */
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+  padding-bottom: 0.75rem;
+}
+
+.materials-toolbar-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.materials-filter {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.materials-filter-label {
+  font-size: 0.8rem;
+}
+
+.materials-filter input[type='search'] {
+  width: 100%;
+}
+
+.materials-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto; /* "Zobrazené sloupce" úplně doprava */
+}
+
+.materials-count {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+/* blok s výsledky – tabulka  scroll */
+.materials-results-block {
+  margin-top: 0.75rem;
+}
+
+/* tabulka se seznamem uložených surovin */
+.materials-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.materials-table th,
+.materials-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+  vertical-align: top;
+}
+
+.materials-table thead {
+  background: #f9fafb;
+}
+
+body.theme-dark .materials-table thead {
+  background: #020617;
+}
+
+/* zebra pruhování řádků (liché/sudé) */
+.materials-table tbody tr:nth-child(odd) {
+  background: rgba(148, 163, 184, 0.05);
+}
+
+body.theme-dark .materials-table tbody tr:nth-child(odd) {
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.materials-table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+body.theme-dark .materials-table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+/* spodní řádek – stránkování */
+.materials-pagination {
+  margin-top: 0.9rem;            /* mezera nad stránkováním */
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.materials-pagination button {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  padding: 0.25rem 0.7rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.materials-pagination button:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+/* CRM TLAČÍTKA – Přidat surovinu, Upravit, Smazat */
+.crm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  font-size: 0.9rem;
+  background: #e5e7eb;
+  color: #020617;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+
+.crm-btn-sm {
+  padding: 0.2rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.crm-btn-primary {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.crm-btn-secondary {
+  background: #e5e7eb;
+  color: #0f172a;
+}
+
+.crm-btn-danger {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+.crm-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.crm-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+body.theme-dark .crm-btn {
+  background: #0f172a;
+  border-color: rgba(148, 163, 184, 0.9);
+  color: #e5e7eb;
+}
+
+body.theme-dark .crm-btn-secondary {
+  background: #1e293b;
+}
+
+body.theme-dark .crm-btn-danger {
+  background: #b91c1c;
+}
+
+/* responzivní chování toolbaru */
+@media (max-width: 720px) {
+  .materials-toolbar-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .materials-toolbar-actions {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+}
+
 /* CRM – wrapper modulu */
 .crm-module {
 }
@@ -55,7 +246,7 @@
   vertical-align: middle;
 }
 
-/* SUROVINY – horní tlačítko + layout */
+/* SUROVINY – horní tlačítko  layout */
 .materials-toggle {
   margin-bottom: 0.75rem;
   display: flex;
@@ -93,10 +284,9 @@ body.theme-dark .materials-card {
 
 /* toolbar nad tabulkou */
 .materials-toolbar-inner {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto;
+  display: flex;
   gap: 0.85rem;
-  align-items: end;
+  align-items: flex-end;
 }
 
 .materials-toolbar-actions {
@@ -104,6 +294,7 @@ body.theme-dark .materials-card {
   gap: 0.6rem;
   align-items: center;
   justify-content: flex-end;
+  margin-left: auto; /* tlačítko "Zobrazené sloupce" úplně doprava */
 }
 
 .materials-filter {
@@ -119,13 +310,14 @@ body.theme-dark .materials-card {
 
 .materials-toolbar {
   border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-  padding-bottom: 0.75rem;
-  margin-bottom: 0.75rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem; /* optické oddělení toolbaru od tabulky */
 }
 
 @media (max-width: 720px) {
   .materials-toolbar-inner {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .materials-toolbar-actions {
@@ -145,7 +337,7 @@ body.theme-dark .materials-card {
   border-radius: 0.75rem;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.9));
   padding: 0.35rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 1rem; /* větší mezera nad stránkováním */
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
@@ -294,7 +486,7 @@ body.theme-dark .materials-modal-card {
 
 /* stránkování pod tabulkou surovin */
 .materials-pagination {
-  margin-top: 0.5rem;
+  margin-top: 1rem; /* optické oddělení tabulky od stránkování */
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -302,7 +494,6 @@ body.theme-dark .materials-modal-card {
   font-size: 0.85rem;
   border-top: 1px solid rgba(148, 163, 184, 0.35);
   padding-top: 0.75rem;
-  margin-top: 0.85rem;
 }
 
 .materials-pagination button {

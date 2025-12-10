@@ -24,4 +24,15 @@ export default {
   dueDate: 'Termín výroby',
   quantity: 'Množství',
   status: 'Stav',
+
+  // Detailnější texty pro podstránky CRM
+  intermediatesIntro: 'Vytvořte polotovary z již evidovaných surovin.',
+  intermediatesListTitle: 'Přehled polotovarů',
+  intermediatesListSubtitle: 'Receptury, které využívají uložené suroviny.',
+  recipesListTitle: 'Receptury',
+  recipesListSubtitle: 'Aktuální finální produkty a jejich složení.',
+  ordersIntro: 'Zadejte zakázku zákazníka a přiřaďte k ní konkrétní recepturu.',
+  ordersListTitle: 'Zakázky',
+  ordersListSubtitle: 'Rozpracované a dokončené zákaznické receptury.',
+  emptyOrdersCreateHint: 'Pro založení zakázky vytvořte nejdříve recepturu.',
 };

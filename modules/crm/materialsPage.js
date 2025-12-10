@@ -1,5 +1,5 @@
 import { showToast } from '../../core/uiService.js';
-import { requestWithCsrf } from '../../core/authService.js';
+import { apiJson } from '../../core/authService.js';
 import {
   deleteUserColumns,
   loadUserColumns,
@@ -12,34 +12,18 @@ const MODULE_CODE = 'crm';
 const VIEW_CODE = 'materials';
 
 async function apiFetch(url, options = {}) {
-  const res = await fetch(url, { credentials: 'same-origin', ...options });
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    throw new Error(data.message || 'Operace selhala');
-  }
-  return data;
+  return apiJson(url, { method: 'GET', ...options });
 }
 
 async function apiPost(url, payload) {
-  const res = await requestWithCsrf(url, {
+  return apiJson(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: payload,
   });
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    throw new Error(data.message || 'Operace selhala');
-  }
-  return data;
 }
 
 async function apiDelete(url) {
-  const res = await requestWithCsrf(url, { method: 'DELETE' });
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    throw new Error(data.message || 'Operace selhala');
-  }
-  return data;
+  return apiJson(url, { method: 'DELETE' });
 }
 
 function generateMaterialCode(materials) {

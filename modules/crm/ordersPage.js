@@ -1,5 +1,5 @@
 import { showToast } from '../../core/uiService.js';
-import { createCard, loadList, renderEmptyState, saveList, STORAGE_KEYS } from './shared.js';
+import { createCard, loadList, renderEmptyState, saveList, STORAGE_KEYS, sortBy } from './shared.js';
 
 export function renderOrders(container, { labels, onCountChange } = {}) {
   const recipes = loadList(STORAGE_KEYS.recipes);
@@ -10,10 +10,14 @@ export function renderOrders(container, { labels, onCountChange } = {}) {
 
   const formCard = createCard(
     labels.addOrder,
-    'Zadejte zakázku zákazníka a přiřaďte k ní konkrétní recepturu.'
+    labels.ordersIntro ||
+      'Zadejte zakázku zákazníka a přiřaďte k ní konkrétní recepturu.'
   );
   if (!recipes.length) {
-    renderEmptyState(formCard, 'Pro založení zakázky vytvořte nejdříve recepturu.');
+    const emptyText =
+      labels.emptyOrdersCreateHint ||
+      'Pro založení zakázky vytvořte nejdříve recepturu.';
+    renderEmptyState(formCard, emptyText);
   } else {
     const form = document.createElement('form');
     form.className = 'form-grid crm-two-col';
@@ -46,6 +50,15 @@ export function renderOrders(container, { labels, onCountChange } = {}) {
       e.preventDefault();
       const fd = new FormData(form);
 
+      const recipeId = fd.get('recipeId');
+      const recipeExists = recipes.some((r) => r.id === recipeId);
+      if (!recipeExists) {
+        showToast('Zvolená receptura již není k dispozici.', {
+          type: 'error',
+        });
+        return;
+      }
+
       const entry = {
         id: crypto.randomUUID(),
         customer: fd.get('customer'),
@@ -69,7 +82,11 @@ export function renderOrders(container, { labels, onCountChange } = {}) {
   }
   grid.appendChild(formCard);
 
-  const listCard = createCard('Zakázky', 'Rozpracované a dokončené zákaznické receptury.');
+  const listCard = createCard(
+    labels.ordersListTitle || 'Zakázky',
+    labels.ordersListSubtitle || 'Rozpracované a dokončené zákaznické receptury.'
+  );
+  
   if (!orders.length) {
     renderEmptyState(listCard, labels.emptyOrders);
   } else {
@@ -90,12 +107,23 @@ export function renderOrders(container, { labels, onCountChange } = {}) {
 
     const tbody = document.createElement('tbody');
 
-    orders.forEach((order) => {
+    // seřadíme zakázky podle termínu – nejbližší termín nahoře
+    const sortedOrders = sortBy(
+      orders,
+      (o) => o.dueDate || '',
+      'asc'
+    );
+
+    sortedOrders.forEach((order) => {
       const recipe = recipes.find((r) => r.id === order.recipeId);
+      const recipeLabel = recipe
+        ? `${recipe.name}${recipe.shade ? ` — ${recipe.shade}` : ''}`
+        : 'Receptura nenalezena';
+
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>${order.customer}</td>
-        <td>${recipe ? recipe.name : 'Receptura nenalezena'}</td>
+        <td>${recipeLabel}</td>
         <td>${order.quantity ? `${order.quantity} kg` : '—'}</td>
         <td>${order.dueDate || '—'}</td>
         <td>${order.status}</td>

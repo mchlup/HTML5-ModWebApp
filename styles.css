@@ -984,6 +984,7 @@ body.theme-dark .user-panel .avatar {
   margin-bottom: 1rem;
 }
 
+
 .database-field {
   display: flex;
   flex-direction: column;
@@ -1106,3 +1107,4 @@ body.theme-dark .config-tip {
   gap: 12px;
   margin-top: 12px;
 }
+
