@@ -1,9 +1,0 @@
-{
-    "driver": "mysql",
-    "host": "127.0.0.1",
-    "port": 3306,
-    "database": "crm",
-    "username": "root",
-    "password": "R@d_iT,NAS24",
-    "ssl": false
-}

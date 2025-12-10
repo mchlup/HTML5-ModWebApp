@@ -1,4 +1,0 @@
-# Blokuje přímý přístup k citlivým konfiguračním souborům
-<Files "*.json">
-    Require all denied
-</Files>
