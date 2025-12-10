@@ -1,0 +1,7 @@
+export default {
+  id: 'dashboard',
+  name: 'Dashboard',
+  description: 'Úvodní přehled a rychlé odkazy.',
+  version: '1.0.0',
+  category: 'overview',
+};

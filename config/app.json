@@ -1,0 +1,22 @@
+{
+  "superAdmin": {
+    "username": "admin",
+    "passwordHash": "$2y$12$1ngYI84k3wVKEoKXhaYvIOY2OAYZrVwKWAHB0Si1mRydOxCeRMst.",
+    "enabledOfflineLogin": true,
+    "allowFallbackWithoutDb": true
+  },
+  "defaultEnabledModules": [
+    "dashboard",
+    "config",
+    "crm"
+  ],
+  "modules": {
+    "crm": {
+      "name": "CRM výroby nátěrových hmot",
+      "defaultCity": "Praha"
+    },
+    "config": {},
+    "dashboard": {},
+    "admin": {}
+  }
+}
