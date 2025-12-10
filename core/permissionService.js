@@ -10,6 +10,7 @@ const LEVEL_PRIORITY = {
   none: 0,
   read: 1,
   manage: 2,
+  full: 3,
 };
 
 const ACTION_LEVEL = {
@@ -26,6 +27,7 @@ const ACTION_LEVEL = {
 };
 
 function normalizeLevel(level) {
+  if (level === "full") return "full";
   if (level === "manage") return "manage";
   if (level === "read") return "read";
   return "none";
