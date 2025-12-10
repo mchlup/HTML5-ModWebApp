@@ -169,9 +169,10 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     'Evidence surovin',
     'Přehled surovin, které lze dále použít v polotovarech, recepturách a zakázkách.'
   );
+  listCard.classList.add('materials-card');
 
   const toolbar = document.createElement('div');
-  toolbar.className = 'table-toolbar';
+  toolbar.className = 'table-toolbar materials-toolbar';
   toolbar.innerHTML = `
     <div class="materials-toolbar-inner">
       <label class="materials-filter">
@@ -179,10 +180,10 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
         <input type="search" name="materialsFilter" placeholder="Hledat podle kódu, názvu nebo dodavatele" />
       </label>
       <div class="materials-toolbar-actions">
+        <span class="muted materials-count"></span>
         <button type="button" class="crm-btn crm-btn-secondary" data-role="column-settings">
           ⚙ Zobrazené sloupce
         </button>
-        <span class="muted materials-count"></span>
       </div>
     </div>
   `;
@@ -210,7 +211,10 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   tableWrapper.className = 'table-scroll';
   tableWrapper.appendChild(table);
 
-  listCard.appendChild(tableWrapper);
+  const resultsBlock = document.createElement('div');
+  resultsBlock.className = 'materials-results-block';
+  resultsBlock.appendChild(tableWrapper);
+  listCard.appendChild(resultsBlock);
 
   const pagination = document.createElement('div');
   pagination.className = 'materials-pagination';
