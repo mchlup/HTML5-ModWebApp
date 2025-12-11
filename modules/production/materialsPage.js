@@ -935,7 +935,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       pageSize = typeof payload.pageSize === 'number' ? payload.pageSize : pageSize;
 
       saveList(STORAGE_KEYS.rawMaterials, materials);
-      updateSuggestionLists();
+      await updateSuggestionLists();
       renderTable();
 
       if (typeof onMaterialCountChange === 'function') {
