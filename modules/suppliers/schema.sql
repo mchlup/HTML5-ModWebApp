@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS app_suppliers (
   note TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NULL,
-  UNIQUE KEY uniq_app_suppliers_code (code)
+  UNIQUE KEY uniq_suppliers_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

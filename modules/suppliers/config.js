@@ -2,8 +2,8 @@ const config = {
   id: 'suppliers',
   name: 'Dodavatelé',
   description: 'Centrální modul pro správu dodavatelů napříč aplikací.',
-  version: '1.0.0',
-  category: 'crm',
+  version: '2.0.0',
+  category: 'production',
   settingsSchema: {
     fields: [
       {
@@ -16,14 +16,15 @@ const config = {
       },
       {
         key: 'tableName',
-        label: 'Tabulka v databázi',
+        label: 'Název databázové tabulky',
         type: 'text',
         placeholder: 'app_suppliers',
-        helpText: 'Název databázové tabulky, kterou modul používá.',
+        helpText:
+          'Název databázové tabulky, ve které jsou uloženi dodavatelé. Pokud není vyplněno, použije se výchozí hodnota app_suppliers.',
       },
       {
         key: 'aliases',
-        label: 'Alias moduly',
+        label: 'Moduly sdílející tabulku',
         type: 'text',
         placeholder: 'crm,erp',
         helpText:
@@ -32,9 +33,11 @@ const config = {
     ],
   },
   dbSchema: {
-    schemaFile: 'schema.sql',
+    // cesta slouží pouze jako informace; backend používá soubor modules/<id>/schema.sql
+    schemaFile: 'modules/suppliers/schema.sql',
     description: 'Založení centrální tabulky dodavatelů.',
   },
 };
 
 export default config;
+

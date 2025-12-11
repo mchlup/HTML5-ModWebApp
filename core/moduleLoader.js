@@ -1,24 +1,22 @@
 // core/moduleLoader.js
 
 import { registerModule } from "./moduleRegistry.js";
-import { getRuntimeConfig, loadModuleConfig, loadRuntimeConfig } from "./configManager.js";
+import { loadModuleConfig, loadRuntimeConfig } from "./configManager.js";
 import { loadModuleTranslations } from "./languageManager.js";
 import { showToast } from "./uiService.js";
 
 /**
  * Načte manifest modulů z backendu (config/modules.php).
  * Backend už řeší práva, povolené moduly atd.
+ *
+ * Záměrně vždy saháme na backend (force: true),
+ * aby se nově přidané moduly (např. po přidání složky v /modules)
+ * načetly automaticky i v případě, že má prohlížeč v cache
+ * starší runtime konfiguraci.
  */
 async function fetchManifest(options = {}) {
+  void options;
   try {
-    const forceReload = Boolean(options.forceReload);
-    if (!forceReload) {
-      const cached = getRuntimeConfig();
-      if (Array.isArray(cached?.modules) && cached.modules.length) {
-        return cached.modules;
-      }
-    }
-
     const cfg = await loadRuntimeConfig({ force: true });
     return Array.isArray(cfg?.modules) ? cfg.modules : [];
   } catch (err) {
@@ -91,7 +89,12 @@ async function loadModule(entry) {
       });
     }
 
-    return { id, meta: entry, config, translations };
+    return {
+      id,
+      meta: entry,
+      config,
+      translations,
+    };
   } catch (err) {
     console.error(`Chyba při načítání modulu "${id}"`, err);
     showToast(`Nepodařilo se načíst modul „${id}“.`, { type: "error" });
@@ -117,3 +120,4 @@ export async function loadAllModules(options = {}) {
 }
 
 export default { loadAllModules };
+

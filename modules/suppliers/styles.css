@@ -1,0 +1,516 @@
+/* Modul suppliers – vzhledově navazuje na CRM/Suroviny, ale je samostatný. */
+
+/* -------------------------------------------------------
+   ZÁKLADNÍ LAYOUT STRÁNKY
+   ------------------------------------------------------- */
+
+.suppliers-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+/* dvě karty vedle sebe řeší form-grid z jádra, tady jen ponecháme layout čistý */
+
+/* karty – sjednocený vzhled */
+.suppliers-card,
+.suppliers-layout .card {
+  /* sjednocení vzhledu karet s modulem Suroviny (production-card) */
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.9rem;
+}
+
+/* úvodní info karta */
+.suppliers-card {
+  margin-bottom: 1rem;
+}
+
+/* přehled tabulky – stará schema karta, necháváme kvůli kompatibilitě */
+.suppliers-schema-table {
+  width: 100%;
+  margin-top: 0.75rem;
+  border-collapse: collapse;
+}
+
+.suppliers-schema-table th,
+.suppliers-schema-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.45);
+  font-size: 0.9rem;
+}
+
+.suppliers-schema-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.suppliers-schema-table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.04);
+}
+
+/* seznam modulů napojených na dodavatele */
+.suppliers-binding-list {
+  margin-top: 0.5rem;
+}
+
+.suppliers-binding-list .form-actions {
+  margin-top: 0.5rem;
+}
+
+/* pill řádek v headeru (pro jistotu, pokud by chyběl v jádru) */
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* karta se seznamem dodavatelů */
+.suppliers-list-card {
+  margin-top: 1rem;
+  /* karta se nebude „řezat“, ale v případě potřeby zobrazí posuvník,
+     takže je vždy dostupná celá tabulka se seznamem dodavatelů */
+  overflow: auto;
+}
+
+/* karta s formulářem v modálu */
+.suppliers-form-card {
+  margin-top: 0.25rem;
+}
+
+/* základní layout – sladění s form-grid z jádra */
+.suppliers-layout.form-grid {
+  align-items: flex-start;
+}
+
+/* -------------------------------------------------------
+   TOOLBAR NAD TABULKOU
+   ------------------------------------------------------- */
+
+.suppliers-toolbar {
+  margin-top: 0.5rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+body.theme-dark .suppliers-toolbar {
+  border-bottom-color: rgba(148, 163, 184, 0.28);
+}
+
+/* tlačítko "Přidat dodavatele" zarovnat doprava jako u Surovin */
+.suppliers-toolbar > .suppliers-btn-primary {
+  margin-left: auto;
+}
+
+/* vyhledávací pole v toolbaru */
+.suppliers-toolbar .suppliers-search {
+  flex: 1 1 260px;
+  max-width: 420px;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.75);
+  font-size: 0.9rem;
+  background: rgba(15, 23, 42, 0.02);
+}
+
+body.theme-dark .suppliers-toolbar .suppliers-search {
+  background: rgba(15, 23, 42, 0.75);
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #e5e7eb;
+}
+
+.suppliers-toolbar .suppliers-search::placeholder {
+  color: rgba(148, 163, 184, 0.9);
+}
+
+/* -------------------------------------------------------
+   “TABULKA” DODAVATELŮ (GRID)
+   ------------------------------------------------------- */
+
+.suppliers-table {
+  width: 100%;
+  margin-top: 0;
+}
+
+/* blok s výsledky – obdobně jako .materials-results-block u Surovin */
+.suppliers-results-block {
+  margin-top: 0.75rem;
+}
+
+.suppliers-header-row,
+.suppliers-row {
+  display: grid;
+  /* stejné poměry jako dřív, ale min. šířka = 0, takže se všechny sloupce vždy vejdou do karty */
+  grid-template-columns:
+    minmax(0, 1.4fr) /* Název */
+    minmax(0, 0.6fr) /* Kód */
+    minmax(0, 1fr)   /* Kontaktní osoba */
+    minmax(0, 1fr)   /* E-mail */
+    minmax(0, 0.9fr) /* Telefon */
+    minmax(0, 1.1fr) /* Web */
+    minmax(0, 1fr)   /* Poznámka */
+    minmax(0, 0.9fr);/* Akce */
+  /* column-gap: 0.5rem; */
+}
+
+.suppliers-header-cell,
+.suppliers-cell {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suppliers-header-cell {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+body.theme-dark .suppliers-header-cell {
+  color: #94a3b8;
+}
+
+.suppliers-header-row {
+  background: rgba(148, 163, 184, 0.05);
+}
+
+body.theme-dark .suppliers-header-row {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.suppliers-row:nth-child(odd) .suppliers-cell {
+  background: rgba(148, 163, 184, 0.05);
+}
+
+body.theme-dark .suppliers-row:nth-child(odd) .suppliers-cell {
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.suppliers-row:hover .suppliers-cell {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+body.theme-dark .suppliers-row:hover .suppliers-cell {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+/* poslední sloupec – Akce */
+.suppliers-actions {
+  /* tlačítka musí být pod sebou */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding-top: 0.15rem;
+}
+
+/* tlačítka uvnitř akčního sloupce */
+.suppliers-actions .suppliers-btn {
+  border-radius: 0.6rem;
+  min-width: 90px;
+  justify-content: flex-start;
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
+}
+
+/* -------------------------------------------------------
+   TLAČÍTKA (inspirováno Suroviny/production)
+   ------------------------------------------------------- */
+
+.suppliers-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  font-size: 0.9rem;
+  background: #e5e7eb;
+  color: #020617;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.1;
+  font-weight: 500;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 90ms ease,
+    box-shadow 130ms ease,
+    color 120ms ease;
+}
+
+body.theme-dark .suppliers-btn {
+  background: rgba(30, 64, 175, 0.35);
+  border-color: rgba(129, 140, 248, 0.6);
+  color: #e5e7eb;
+}
+
+.suppliers-btn:hover {
+  transform: translateY(-1px) scale(1.02);
+  background: #f1f5f9;
+  border-color: rgba(148, 163, 184, 1);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
+}
+
+body.theme-dark .suppliers-btn:hover {
+  background: rgba(30, 64, 175, 0.6);
+}
+
+/* varianty */
+.suppliers-btn-primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-color: rgba(37, 99, 235, 0.9);
+  color: #f9fafb;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.35);
+  display: inline-flex;
+  gap: 0.45rem;
+}
+
+.suppliers-btn-primary:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.45);
+}
+
+.suppliers-btn-secondary {
+  background: rgba(148, 163, 184, 0.12);
+  color: #0f172a;
+  display: inline-flex;
+  gap: 0.45rem;
+}
+
+body.theme-dark .suppliers-btn-secondary {
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+}
+
+.suppliers-btn-danger {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #b91c1c;
+  display: inline-flex;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+
+body.theme-dark .suppliers-btn-danger {
+  background: rgba(127, 29, 29, 0.35);
+  border-color: rgba(248, 113, 113, 0.85);
+  color: #fecaca;
+}
+
+.suppliers-btn-danger:hover {
+  background: #fecaca;
+  border-color: #f87171;
+  box-shadow: 0 10px 26px rgba(185, 28, 28, 0.25);
+}
+
+/* menší verze (toolbar, actions) */
+.suppliers-btn-sm {
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+/* -------------------------------------------------------
+   IKONY V TLAČÍTKÁCH (Font Awesome)
+   ------------------------------------------------------- */
+
+/* plus ikonka u "Přidat dodavatele" (toolbar) */
+.suppliers-toolbar > .suppliers-btn-primary::before {
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  content: "\f067"; /* plus */
+}
+
+/* edit ikonka v akčním sloupci */
+.suppliers-actions .suppliers-btn-secondary::before {
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  content: "\f304"; /* edit */
+}
+
+/* koš (smazat) v akčním sloupci */
+.suppliers-actions .suppliers-btn-danger::before {
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  content: "\f1f8"; /* trash */
+}
+
+/* sort ikonka v hlavičce tabulky */
+.suppliers-header-cell.sortable .sort-icon {
+  margin-left: 0.35rem;
+  font-size: 0.65rem;
+  opacity: 0.45;
+  display: inline-block;
+  vertical-align: middle;
+  transition: opacity 120ms ease;
+}
+
+.suppliers-header-cell.sortable .sort-icon::before {
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  content: "\f0dc"; /* sort */
+}
+
+.suppliers-header-cell.sortable:hover .sort-icon {
+  opacity: 0.9;
+}
+
+/* -------------------------------------------------------
+   FORMULÁŘ V MODÁLNÍM OKNĚ
+   ------------------------------------------------------- */
+
+.suppliers-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.6rem;
+}
+
+.suppliers-form-row label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  color: #64748b;
+}
+
+body.theme-dark .suppliers-form-row label {
+  color: #94a3b8;
+}
+
+.suppliers-input {
+  width: 100%;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.75);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  background: rgba(248, 250, 252, 0.96);
+  color: #0f172a;
+}
+
+.suppliers-input:focus {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.9);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
+  background: #ffffff;
+}
+
+body.theme-dark .suppliers-input {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(148, 163, 184, 0.6);
+  color: #e5e7eb;
+}
+
+body.theme-dark .suppliers-input:focus {
+  border-color: rgba(129, 140, 248, 0.9);
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.6);
+}
+
+.suppliers-input::placeholder {
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.suppliers-form-row textarea.suppliers-input {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.suppliers-form-card .form-actions {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* aby "Zrušit" nebylo výraznější než "Uložit" */
+.suppliers-form-card .suppliers-btn-secondary {
+  border-style: dashed;
+}
+
+/* -------------------------------------------------------
+   MODÁLNÍ OKNO
+   ------------------------------------------------------- */
+
+.suppliers-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.suppliers-modal-backdrop.hidden {
+  display: none;
+}
+
+.suppliers-modal {
+  width: min(640px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 1rem;
+  background: #f9fafb;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45);
+  padding: 1.25rem 1.5rem;
+}
+
+body.theme-dark .suppliers-modal {
+  background: #020617;
+}
+
+.suppliers-modal .card {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.suppliers-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.suppliers-modal-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+}
+
+/* -------------------------------------------------------
+   STRÁNKOVÁNÍ SEZNAMU
+   ------------------------------------------------------- */
+
+.suppliers-pagination {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+body.theme-dark .suppliers-pagination {
+  color: #94a3b8;
+}
+

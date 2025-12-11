@@ -2,6 +2,7 @@
   "id": "suppliers",
   "name": "Dodavatelé",
   "description": "Centrální modul pro správu dodavatelů napříč aplikací.",
-  "version": "1.0.0",
-  "category": "crm"
+  "version": "2.0.0",
+  "category": "production"
 }
+

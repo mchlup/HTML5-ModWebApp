@@ -8,11 +8,11 @@
   "defaultEnabledModules": [
     "dashboard",
     "config",
-    "crm",
+    "production",
     "suppliers"
   ],
   "modules": {
-    "crm": {
+    "production": {
       "name": "CRM výroby nátěrových hmot",
       "defaultCity": "Praha"
     },
@@ -21,7 +21,7 @@
       "description": "Centrální modul pro správu dodavatelů",
       "primaryModuleId": "suppliers",
       "tableName": "app_suppliers",
-      "aliases": "crm"
+      "aliases": "production"
     },
     "config": {},
     "dashboard": {},

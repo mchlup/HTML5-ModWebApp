@@ -163,8 +163,34 @@ if ($method === 'GET') {
             } else {
                 $permissions = [];
             }
-
             $usedDb = true;
+
+            // Doplníme moduly, které existují ve FS (listAvailableModules),
+            // ale ještě nemají záznam v DB (nově přidané moduly jako "suppliers").
+            $knownIds = [];
+            foreach ($modules as $m) {
+                $id = (string) ($m['id'] ?? '');
+                if ($id !== '') {
+                    $knownIds[$id] = true;
+                }
+            }
+
+            foreach ($available as $fsModule) {
+                $id = (string) ($fsModule['id'] ?? '');
+                if ($id === '' || isset($knownIds[$id])) {
+                    continue;
+                }
+
+                $modules[] = [
+                    'id'          => $id,
+                    'name'        => (string) ($fsModule['name'] ?? $id),
+                    'description' => $fsModule['description'] ?? null,
+                    'version'     => $fsModule['version'] ?? null,
+                    'category'    => $fsModule['category'] ?? null,
+                    'order'       => (int) ($fsModule['order'] ?? 0),
+                    'enabled'     => false, // nové moduly jsou defaultně vypnuté
+                ];
+            }
         } catch (Throwable $e) {
             // pokud cokoliv z DB selže, spadneme zpět na čistý FS fallback
             $modules     = $available;
