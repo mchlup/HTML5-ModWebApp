@@ -5,6 +5,7 @@ import { renderIntermediates } from './intermediatesPage.js';
 import { renderRecipes } from './recipesPage.js';
 import { renderOrders } from './ordersPage.js';
 import { renderSuppliers } from './suppliersPage.js';
+import { matchesSupplierModule, resolveSupplierBinding } from '../../core/supplierBinding.js';
 
 let crmStylesLoaded = false;
 
@@ -81,7 +82,7 @@ function getInitialCounts() {
   };
 }
 
-function renderCrm(container, { currentSubId } = {}) {
+function renderCrm(container, { currentSubId, runtimeConfig } = {}) {
   // zajistí načtení CSS specifického pro modul CRM
   ensureCrmStylesLoaded();
   const wrap = document.createElement('div');
@@ -170,7 +171,39 @@ function renderCrm(container, { currentSubId } = {}) {
           updateKpi('suppliers', uniqueSuppliers.size);
         },
       }),
-    dodavatele: () => renderSuppliers(content, { labels }),
+    dodavatele: () => {
+      const binding = resolveSupplierBinding(runtimeConfig);
+      const isCrmAlias = matchesSupplierModule('crm', runtimeConfig);
+      if (isCrmAlias && binding.primaryModuleId !== 'crm') {
+        const card = document.createElement('div');
+        card.className = 'card crm-card';
+        const title = document.createElement('h3');
+        title.textContent = labels.suppliers;
+        card.appendChild(title);
+
+        const info = document.createElement('p');
+        info.className = 'muted';
+        info.textContent = labels.suppliersRedirect;
+        card.appendChild(info);
+
+        const actions = document.createElement('div');
+        actions.className = 'form-actions';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = labels.openSuppliersModule;
+        btn.addEventListener('click', () => {
+          window.location.hash = `#/${binding.primaryModuleId}`;
+        });
+        actions.appendChild(btn);
+        card.appendChild(actions);
+
+        content.innerHTML = '';
+        content.appendChild(card);
+        return;
+      }
+
+      return renderSuppliers(content, { labels, runtimeConfig });
+    },
     polotovary: () =>
       renderIntermediates(content, {
         labels,
