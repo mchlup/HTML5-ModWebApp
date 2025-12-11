@@ -163,7 +163,8 @@ function renderShell() {
     iconWrap.innerHTML = `<i class="${entry.meta?.iconClass || "fa-solid fa-circle"}"></i>`;
     const labelSpan = document.createElement("span");
     labelSpan.className = "nav-label";
-    labelSpan.textContent = overrides.name || resolveLabel(entry.meta, entry.id || id);
+    // název modulu v menu primárně z jazykových souborů modulu (meta.labels)
+    labelSpan.textContent = resolveLabel(entry.meta, overrides.name || entry.id || id);
     link.appendChild(iconWrap);
     link.appendChild(labelSpan);
     if (entry.meta && Array.isArray(entry.meta.navItems) && entry.meta.navItems.length) {
