@@ -3,6 +3,9 @@ export default {
   subtitle: 'Sjednocený pohled na suroviny, polotovary a finální zakázky.',
   materials: 'Suroviny',
   suppliers: 'Dodavatelé',
+  openSuppliersModule: 'Přejít do modulu Dodavatelé',
+  suppliersRedirect:
+    'Správa dodavatelů je centralizovaná v samostatném modulu, aby se tabulka nepoužívala duplicitně.',
   intermediates: 'Polotovary',
   recipes: 'Receptury',
   orders: 'Zakázky',

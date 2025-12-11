@@ -33,7 +33,7 @@ function buildSupplierStats(materials) {
   });
 }
 
-export function renderSuppliers(container, { labels } = {}) {
+export function renderSuppliers(container, { labels, runtimeConfig } = {}) {
   const materials = loadList(STORAGE_KEYS.rawMaterials).filter((m) => m.supplier);
   const suppliers = buildSupplierStats(materials);
 
