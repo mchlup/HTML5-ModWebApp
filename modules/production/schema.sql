@@ -1,0 +1,95 @@
+-- modules/production/schema.sql
+-- production schema pro modul "production" - vyroba a prodej naterovych hmot
+-- Navrzeno pro MySQL/MariaDB (InnoDB, utf8mb4).
+
+CREATE TABLE IF NOT EXISTS production_materials (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(100) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  supplier VARCHAR(255) NULL,
+  price DECIMAL(12,2) NULL,          -- cena / kg
+  density DECIMAL(10,3) NULL,        -- hustota (g/cm3)
+  solids DECIMAL(5,2) NULL,          -- susina v %
+  okp VARCHAR(50) NULL,              -- OKP / VOC kategorie nebo jiny kod
+  oil VARCHAR(100) NULL,             -- typ oleje / olejova faze
+  voc DECIMAL(10,3) NULL,            -- VOC (g/l)
+  safety VARCHAR(255) NULL,          -- napr. H315, H319
+  note TEXT NULL,                    -- poznamka
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_production_materials_code (code),
+  KEY idx_production_materials_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS production_intermediates (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  code VARCHAR(100) NULL,
+  base VARCHAR(100) NULL,            -- napr. vodou reditelny / rozpoustedlovy zaklad
+  solids DECIMAL(5,2) NULL,          -- susina v %
+  viscosity DECIMAL(10,2) NULL,      -- viskozita (mPa·s)
+  note TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS production_intermediate_components (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  intermediate_id INT UNSIGNED NOT NULL,
+  material_id INT UNSIGNED NOT NULL,
+  share DECIMAL(5,2) NOT NULL,       -- podil v %
+  CONSTRAINT fk_production_intermediate_components_intermediate
+    FOREIGN KEY (intermediate_id) REFERENCES production_intermediates(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_production_intermediate_components_material
+    FOREIGN KEY (material_id) REFERENCES production_materials(id)
+    ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS production_recipes (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  shade VARCHAR(100) NULL,           -- odstin
+  gloss VARCHAR(100) NULL,           -- lesk
+  batch_size DECIMAL(10,2) NULL,     -- davka v kg
+  note TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS production_recipe_components (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  recipe_id INT UNSIGNED NOT NULL,
+  component_type ENUM('material','intermediate') NOT NULL,
+  component_id INT UNSIGNED NOT NULL,
+  amount DECIMAL(10,3) NOT NULL,     -- mnozstvi v davce
+  CONSTRAINT fk_production_recipe_components_recipe
+    FOREIGN KEY (recipe_id) REFERENCES production_recipes(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS production_orders (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  customer VARCHAR(255) NOT NULL,
+  contact VARCHAR(255) NULL,
+  recipe_id INT UNSIGNED NOT NULL,
+  quantity DECIMAL(10,2) NULL,       -- mnozstvi v kg
+  due_date DATE NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'nova',
+  note TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_production_orders_recipe
+    FOREIGN KEY (recipe_id) REFERENCES production_recipes(id)
+    ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- MIGRACE PRO STARE INSTALACE
+-- Pokud tabulka production_materials existuje, ale nema nove sloupce, timhle se doplni.
+ALTER TABLE production_materials
+  ADD COLUMN IF NOT EXISTS supplier VARCHAR(255) NULL AFTER name,
+  ADD COLUMN IF NOT EXISTS price DECIMAL(12,2) NULL AFTER supplier,
+  ADD COLUMN IF NOT EXISTS density DECIMAL(10,3) NULL AFTER price,
+  ADD COLUMN IF NOT EXISTS solids DECIMAL(5,2) NULL AFTER density,
+  ADD COLUMN IF NOT EXISTS okp VARCHAR(50) NULL AFTER solids,
+  ADD COLUMN IF NOT EXISTS oil VARCHAR(100) NULL AFTER okp,
+  ADD COLUMN IF NOT EXISTS voc DECIMAL(10,3) NULL AFTER oil,
+  ADD COLUMN IF NOT EXISTS safety VARCHAR(255) NULL AFTER voc,
+  ADD COLUMN IF NOT EXISTS note TEXT NULL AFTER safety;
+
