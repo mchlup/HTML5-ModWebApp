@@ -131,19 +131,14 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
           <select name="supplier">
             <option value="">(vyberte dodavatele)</option>
           </select>
-          <button type="button" class="production-btn production-btn-secondary production-btn-sm" data-role="add-supplier">+ Nový dodavatel</button>
+          <button type="button" class="production-btn production-btn-secondary production-btn-sm materials-add-supplier-btn" data-role="add-supplier">+ Nový dodavatel</button>
         </div>
       </label>
       <label>
         Cena / kg
         <input name="price" type="number" min="0" step="0.01" placeholder="120" />
       </label>
-      <div>
-        <button type="button" data-role="add-supplier" class="secondary">
-          + Nový dodavatel
-        </button>
-      </div>
-    </div>
+</div>
 
     <div class="form-grid" style="${rowStyle}">
       <label>
@@ -295,7 +290,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
 
   function closeMaterialModal() {
     if (materialModal) {
-      materialModal.handleClose();
+      materialModal.close();
     }
   }
   
@@ -326,7 +321,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     form.appendChild(actions);
 
     const wrapper = document.createElement('div');
-    wrapper.className = 'production-modal-card materials-modal-card';
+    wrapper.className = 'production-modal-card materials-modal-card materials-supplier-card';
     wrapper.appendChild(form);
 
     supplierModal = createStandardModal({
@@ -354,14 +349,28 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       e.preventDefault();
       try {
         const data = Object.fromEntries(new FormData(form).entries());
-        const qs = new URLSearchParams({ action: 'create', ...data });
-        const res = await apiFetch(`${SUPPLIERS_API}?${qs.toString()}`);
-        await loadSuppliers();
-        supplierSelect.value = res?.id || supplierSelect.value;
+
+        const name = String(data.name || '').trim();
+        const ico = String(data.ico || '').trim();
+        const note = String(data.note || '').trim();
+
+        // API dodavatelů podporuje vytvoření/úpravu přes POST action=save
+        await apiPost(`${SUPPLIERS_API}?action=save`, {
+          name,
+          // v DB dodavatelů je pole "code"; z inline modálu posíláme IČO jako kód
+          code: ico,
+          note,
+        });
+
+        // zneplatníme cache a znovu naplníme select dodavatelů v modálu suroviny
+        supplierOptionsCache = null;
+        await updateSuggestionLists();
+        supplierInput.value = name;
+
         showToast('Dodavatel uložen.');
         supplierModal.close();
       } catch (err) {
-        showToast(err?.message || 'Uložení dodavatele se nezdařilo.', 'error');
+        showToast(err?.message || 'Uložení dodavatele se nezdařilo.', { type: 'error' });
       }
     });
 

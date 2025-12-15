@@ -166,6 +166,18 @@ body.theme-dark .materials-table tbody tr:hover {
   font-size: 0.8rem;
 }
 
+/* Suroviny – funkční tlačítko "+ Nový dodavatel" */
+.materials-add-supplier-btn{
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.10);
+}
+.materials-add-supplier-btn:hover:not(:disabled){
+  background: rgba(37, 99, 235, 0.18);
+}
+body.theme-dark .materials-add-supplier-btn{
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.22);
+}
 .production-btn-primary {
   background: #2563eb;
   border-color: #1d4ed8;
@@ -490,6 +502,43 @@ body.theme-dark .materials-table tbody tr:hover {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
 }
 
+/* Modál "Nový dodavatel" – kompaktnější a čitelnější */
+.materials-supplier-modal{
+  max-width: 560px;
+}
+.materials-supplier-card{
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+}
+.supplier-inline-form{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.supplier-inline-form label{
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.supplier-inline-form textarea{
+  min-height: 72px;
+}
+.supplier-inline-form label:nth-child(3){
+  grid-column: 1 / -1;
+}
+.supplier-inline-form .form-actions{
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+@media (max-width: 620px){
+  .supplier-inline-form{
+    grid-template-columns: 1fr;
+  }
+}
 .materials-modal-header h3,
 .production-modal-header h3 {
   margin: 0;
@@ -524,7 +573,7 @@ body.theme-dark .materials-table tbody tr:hover {
 }
 
 body.theme-dark .materials-modal-card,
-.production-modal-card {
+body.theme-dark .production-modal-card {
   background: rgba(15, 23, 42, 0.95);
   border-color: rgba(148, 163, 184, 0.25);
 }
