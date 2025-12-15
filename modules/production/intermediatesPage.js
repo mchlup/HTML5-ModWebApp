@@ -4,6 +4,7 @@ import {
   createPill,
   createStandardModal,
   createStandardListCard,
+  bindDetailModal,
   loadList,
   renderEmptyState,
   saveList,
@@ -295,6 +296,47 @@ export function renderIntermediates(container, { labels, onCountChange } = {}) {
       block.appendChild(tags);
       block.appendChild(note);
       block.appendChild(actions);
+
+      // Klik na blok -> detail polotovaru
+      bindDetailModal(block, {
+        item: i,
+        eyebrow: 'DETAIL POLOTOVARU',
+        title: i?.name || 'Polotovar',
+        subtitle: i?.base === 'water' ? 'Vodou ředitelný' : i?.base === 'solvent' ? 'Rozpouštědlový' : '',
+        overlayClass: 'production-detail-modal-overlay',
+        modalClass: 'production-detail-modal',
+        fields: [
+          { label: 'Název', value: (x) => x?.name },
+          {
+            label: 'Typ',
+            value: (x) =>
+              x?.base === 'water'
+                ? 'Vodou ředitelný'
+                : x?.base === 'solvent'
+                ? 'Rozpouštědlový'
+                : null,
+          },
+          { label: 'Hustota (g/cm³)', value: (x) => x?.density },
+          { label: 'Poznámka', value: (x) => x?.note },
+          {
+            label: 'Složení',
+            value: (x) => {
+              const comp = Array.isArray(x?.composition) ? x.composition : [];
+              if (!comp.length) return '—';
+              const ul = document.createElement('ul');
+              ul.className = 'production-detail-ul';
+              comp.forEach((c) => {
+                const li = document.createElement('li');
+                const m = materials.find((mm) => Number(mm.id) === Number(c.materialId));
+                const qtyText = c.quantity != null ? ` – ${c.quantity} kg` : '';
+                li.textContent = `${m?.name || 'Surovina'}${qtyText}`;
+                ul.appendChild(li);
+              });
+              return ul;
+            },
+          },
+        ],
+      });
 
       listWrap.appendChild(block);
     });

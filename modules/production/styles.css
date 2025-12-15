@@ -413,6 +413,39 @@ body.theme-dark .materials-table tbody tr {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+/* Klikací řádky / bloky pro detail modál */
+.production-clickable {
+  cursor: pointer;
+}
+
+.production-clickable:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.65);
+  outline-offset: 2px;
+}
+
+.production-detail-list {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+
+.production-detail-list dt {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.production-detail-list dd {
+  margin: 0;
+  opacity: 0.95;
+  word-break: break-word;
+}
+
+.production-detail-ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
 body.theme-dark .materials-table tbody tr:hover {
   background: rgba(255, 255, 255, 0.08);
 }

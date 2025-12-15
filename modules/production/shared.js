@@ -368,3 +368,126 @@ export function createStandardModal({
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Detail modál (klik na řádek / položku v seznamu)
+// ---------------------------------------------------------------------------
+
+/**
+ * Vrátí true, pokud klik / focus vznikl na "interaktivním" prvku uvnitř řádku
+ * (tlačítka, inputy apod.) – tzn. detail se nemá otevřít.
+ *
+ * POZOR: samotný řádek dostává role="button" kvůli a11y.
+ * Proto musíme ignorovat případ, kdy closest([role="button"]) vrátí právě rootEl.
+ */
+function isInteractiveElement(target, rootEl) {
+  if (!(target instanceof Element)) return false;
+
+  const hit = target.closest(
+    'button, a, input, select, textarea, label, [role="button"], [data-no-row-click], .materials-actions, .form-actions'
+  );
+
+  if (!hit) return false;
+  if (rootEl && hit === rootEl) return false; // klik na řádek samotný má otevřít detail
+  return true;
+}
+
+function formatDetailValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (value instanceof Node) return value;
+  if (typeof value === 'boolean') return value ? 'Ano' : 'Ne';
+  if (typeof value === 'number') return String(value);
+  if (value instanceof Date) return value.toLocaleString();
+  return String(value);
+}
+
+/**
+ * Vytvoří jednoduchý přehled detailů (label -> hodnota).
+ * fields: [{ label, value: (item) => any|Node }]
+ */
+export function buildDetailList(fields = [], item) {
+  const wrap = document.createElement('div');
+  wrap.className = 'production-detail';
+
+  const dl = document.createElement('dl');
+  dl.className = 'production-detail-list';
+
+  (fields || []).forEach((f) => {
+    const dt = document.createElement('dt');
+    dt.textContent = f.label || '';
+
+    const dd = document.createElement('dd');
+    const raw = typeof f.value === 'function' ? f.value(item) : item?.[f.key];
+    const val = formatDetailValue(raw);
+    if (val instanceof Node) {
+      dd.appendChild(val);
+    } else {
+      dd.textContent = val;
+    }
+
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  });
+
+  wrap.appendChild(dl);
+  return wrap;
+}
+
+/**
+ * Naváže na element (typicky <tr> nebo blok v listu) otevření modálu s detailem.
+ *
+ * @param {HTMLElement} targetEl
+ * @param {object} options
+ * @param {any} options.item
+ * @param {string} options.title
+ * @param {string} [options.eyebrow]
+ * @param {string} [options.subtitle]
+ * @param {Array} [options.fields]
+ * @param {(item:any)=>HTMLElement} [options.body]
+ * @param {string} [options.overlayClass]
+ * @param {string} [options.modalClass]
+ */
+export function bindDetailModal(targetEl, {
+  item,
+  title,
+  eyebrow = 'DETAIL',
+  subtitle = '',
+  fields = [],
+  body,
+  overlayClass = '',
+  modalClass = '',
+} = {}) {
+  if (!targetEl) return;
+
+  targetEl.classList.add('production-clickable');
+  targetEl.setAttribute('tabindex', '0');
+  targetEl.setAttribute('role', 'button');
+  targetEl.setAttribute('aria-label', `Otevřít detail: ${title || ''}`.trim());
+
+  const openDetail = () => {
+    const bodyContent = typeof body === 'function' ? body(item) : buildDetailList(fields, item);
+    const modal = createStandardModal({
+      eyebrow,
+      title: title || '',
+      subtitle,
+      overlayClass,
+      modalClass,
+      bodyContent,
+    });
+    modal.open();
+  };
+
+  targetEl.addEventListener('click', (e) => {
+    if (isInteractiveElement(e.target, targetEl)) return;
+    openDetail();
+  });
+
+  targetEl.addEventListener('keydown', (e) => {
+    if (isInteractiveElement(e.target, targetEl)) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openDetail();
+    }
+  });
+}
+

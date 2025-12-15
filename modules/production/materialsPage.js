@@ -9,6 +9,7 @@ import {
   createCard,
   createStandardListCard,
   createStandardModal,
+  bindDetailModal,
   modulePath,
   STORAGE_KEYS,
   saveList,
@@ -720,6 +721,40 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       });
 
       tbody.appendChild(tr);
+
+      // Klik na řádek -> detail suroviny (mimo akční tlačítka)
+      bindDetailModal(tr, {
+        item: material,
+        eyebrow: 'DETAIL SUROVINY',
+        title: material?.name || 'Surovina',
+        subtitle: material?.code ? `Kód: ${material.code}` : '',
+        overlayClass: 'production-detail-modal-overlay',
+        modalClass: 'production-detail-modal',
+        fields: [
+          { label: 'Kód', value: (m) => m?.code },
+          { label: 'Název', value: (m) => m?.name },
+          { label: 'Dodavatel', value: (m) => m?.supplier },
+          {
+            label: 'Cena / kg',
+            value: (m) =>
+              typeof m?.price === 'number' ? `${m.price.toFixed(2)} Kč/kg` : m?.price,
+          },
+          { label: 'Hustota (g/cm³)', value: (m) => m?.density },
+          {
+            label: 'Sušina (%)',
+            value: (m) =>
+              m?.solids != null && m.solids !== '' ? `${m.solids} %` : null,
+          },
+          {
+            label: 'VOC (g/l)',
+            value: (m) => (m?.voc != null && m.voc !== '' ? `${m.voc} g/l` : null),
+          },
+          { label: 'OKP / kategorie', value: (m) => m?.okp },
+          { label: 'Olej / olejová fáze', value: (m) => m?.oil },
+          { label: 'Nebezpečnost / SDS', value: (m) => m?.safety },
+          { label: 'Poznámka', value: (m) => m?.note },
+        ],
+      });
     });
 
     const effectivePageSize = pageSize || PAGE_SIZE;

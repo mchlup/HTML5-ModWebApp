@@ -11,6 +11,7 @@ import {
   loadList,
   saveList,
   STORAGE_KEYS,
+  bindDetailModal,
 } from './shared.js';
 
 // Cesty generujeme z import.meta.url, aby nebyl potřeba hardcode názvu modulu
@@ -406,6 +407,66 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
       });
 
       tbody.appendChild(tr);
+
+      // Klik na řádek -> detail receptury (mimo akční tlačítka)
+      bindDetailModal(tr, {
+        item: recipe,
+        eyebrow: 'DETAIL RECEPTURY',
+        title: recipe?.name || 'Receptura',
+        subtitle: recipe?.shade ? `Odstín: ${recipe.shade}` : '',
+        overlayClass: 'production-detail-modal-overlay',
+        modalClass: 'production-detail-modal',
+        fields: [
+          { label: 'Název', value: (r) => r?.name },
+          { label: 'Odstín / kód', value: (r) => r?.shade },
+          { label: 'Základ', value: (r) => r?.base },
+          {
+            label: 'Sušina (%)',
+            value: (r) => (r?.solids != null && r.solids !== '' ? `${r.solids} %` : null),
+          },
+          {
+            label: 'VOC (g/l)',
+            value: (r) => (r?.voc != null && r.voc !== '' ? `${r.voc} g/l` : null),
+          },
+          { label: 'Počet složek', value: (r) => r?.componentsCount },
+          {
+            label: 'Poznámka',
+            value: (r) => r?.note,
+          },
+          {
+            label: 'Složení',
+            value: (r) => {
+              const comp = Array.isArray(r?.composition) ? r.composition : [];
+              if (!comp.length) return '—';
+
+              const ul = document.createElement('ul');
+              ul.className = 'production-detail-ul';
+
+              comp.forEach((c) => {
+                const li = document.createElement('li');
+                const type = c.type || c.itemType || c.kind || '';
+                const id = c.materialId ?? c.intermediateId ?? c.itemId ?? c.id;
+                const qty = c.quantity ?? c.qty ?? c.amount;
+
+                let name = '';
+                if (type === 'intermediate') {
+                  const it = (intermediates || []).find((x) => Number(x.id) === Number(id));
+                  name = it?.name || '';
+                } else {
+                  const m = (materials || []).find((x) => Number(x.id) === Number(id));
+                  name = m?.name || '';
+                }
+
+                const qtyText = qty != null && qty !== '' ? ` – ${qty} kg` : '';
+                li.textContent = `${name || 'Položka'}${qtyText}`;
+                ul.appendChild(li);
+              });
+
+              return ul;
+            },
+          },
+        ],
+      });
     });
 
     countLabel.textContent = `${total} receptur`;

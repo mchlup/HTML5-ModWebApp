@@ -3,6 +3,7 @@ import {
   createCard,
   createStandardModal,
   createStandardListCard,
+  bindDetailModal,
   loadList,
   renderEmptyState,
   saveList,
@@ -329,6 +330,24 @@ export function renderOrders(container, { labels, onCountChange } = {}) {
       block.appendChild(meta);
       block.appendChild(note);
       block.appendChild(actions);
+
+      // Klik na blok -> detail zakázky
+      bindDetailModal(block, {
+        item: o,
+        eyebrow: 'DETAIL ZAKÁZKY',
+        title: `${o.customer || 'Zakázka'} — ${o.recipeName || ''}`.trim(),
+        subtitle: o.dueDate ? `Termín: ${o.dueDate}` : '',
+        overlayClass: 'production-detail-modal-overlay',
+        modalClass: 'production-detail-modal',
+        fields: [
+          { label: 'Zákazník', value: (x) => x?.customer },
+          { label: 'Receptura', value: (x) => x?.recipeName },
+          { label: 'Množství (kg)', value: (x) => x?.quantity },
+          { label: 'Termín výroby', value: (x) => x?.dueDate },
+          { label: 'Stav', value: (x) => x?.status },
+          { label: 'Poznámka', value: (x) => x?.note },
+        ],
+      });
 
       listWrap.appendChild(block);
     });
