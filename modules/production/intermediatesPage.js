@@ -1,199 +1,286 @@
 import { showToast } from '../../core/uiService.js';
-import { createCard, createPill, loadList, renderEmptyState, saveList, STORAGE_KEYS } from './shared.js';
+import {
+  createCard,
+  createPill,
+  createStandardModal,
+  createStandardListCard,
+  loadList,
+  renderEmptyState,
+  saveList,
+  STORAGE_KEYS,
+} from './shared.js';
 
 export function renderIntermediates(container, { labels, onCountChange } = {}) {
   const materials = loadList(STORAGE_KEYS.rawMaterials);
   const intermediates = loadList(STORAGE_KEYS.intermediates);
 
-  const grid = document.createElement('div');
-  grid.className = 'form-grid production-grid';
-
-  const formCard = createCard(
-    labels.addIntermediate,
-    labels.intermediatesIntro || 'Vytvořte polotovary z již evidovaných surovin.'
-  );
-  
+  // Pokud nejsou suroviny, nelze vytvořit polotovar
   if (!materials.length) {
-    const emptyText =
-      labels.emptyIntermediates ||
-      'Nejprve uložte alespoň jednu surovinu, aby bylo možné vytvářet polotovary.';
-    renderEmptyState(formCard, emptyText);
-  } else {
+    const card = createCard(labels.intermediates, labels.emptyIntermediates || 'Nejsou evidovány žádné suroviny.');
+    card.appendChild(
+      renderEmptyState(
+        labels.emptyIntermediates ||
+          'Nejdříve založte alespoň jednu surovinu, poté můžete vytvořit polotovary.'
+      )
+    );
+    container.innerHTML = '';
+    container.appendChild(card);
+    return;
+  }
+
+  // --- List část (sjednocený toolbar) ---
+  const listTpl = createStandardListCard({
+    title: labels.intermediatesListTitle || labels.intermediates,
+    subtitle:
+      labels.intermediatesListSubtitle ||
+      labels.intermediatesIntro ||
+      'Vytvořte polotovary z již evidovaných surovin.',
+    filterLabel: labels.filterIntermediates || 'Filtrovat polotovary',
+    filterName: 'intermediatesFilter',
+    filterPlaceholder: labels.filterIntermediatesPlaceholder || 'Hledat podle názvu nebo poznámky',
+    addButtonText: labels.addIntermediate,
+  });
+
+  const {
+    grid,
+    listCard,
+    filterInput,
+    addBtn,
+    tbody,
+    thead,
+    table,
+    countLabel,
+  } = listTpl;
+
+  // Polotovary nejsou tabulkový výpis jako suroviny – použijeme vlastní blok listu
+  // Tabulku v šabloně schováme.
+  table.style.display = 'none';
+
+  const listWrap = document.createElement('div');
+  listWrap.className = 'intermediates-list';
+  listCard.querySelector('.materials-results-block')?.appendChild(listWrap);
+
+  const state = {
+    term: '',
+  };
+
+  // --- Modal (sjednocená šablona) ---
+  let modal = null;
+
+  function buildFormCard() {
+    const formCard = createCard(
+      labels.addIntermediate,
+      labels.intermediatesIntro || 'Vytvořte polotovary z již evidovaných surovin.'
+    );
+
     const form = document.createElement('form');
-    form.className = 'form-grid production-two-col';
+    form.className = 'production-form';
     form.innerHTML = `
-      <label>Název polotovaru<input name="name" required placeholder="Pigmentová pasta" /></label>
-      <label>Kód / dávka<input name="code" placeholder="PIG-01" /></label>
-      <label>Základ
-        <select name="base">
-          <option value="">(nezadán)</option>
-          <option value="water">Vodou ředitelný</option>
-          <option value="solvent">Rozpouštědlový</option>
-        </select>
-      </label>
-      <label>Sušina (%)<input name="solids" type="number" step="0.1" min="0" max="100" placeholder="55" /></label>
-      <label>Viskozita (mPa·s)<input name="viscosity" type="number" step="1" min="0" placeholder="750" /></label>
+      <div class="form-grid two-col">
+        <label>Název polotovaru<input name="name" required placeholder="Např. Bílá báze A" /></label>
+        <label>Typ
+          <select name="base">
+            <option value="">—</option>
+            <option value="water">Vodou ředitelný</option>
+            <option value="solvent">Rozpouštědlový</option>
+          </select>
+        </label>
+        <label>Hustota (g/cm³)<input name="density" type="number" step="0.01" placeholder="1.15" /></label>
+        <label>Poznámka<textarea name="note" rows="2" placeholder="Např. skladovat do 25 °C"></textarea></label>
+      </div>
     `;
 
     const compositionWrap = document.createElement('div');
-    compositionWrap.className = 'form-field composition-card';
+    compositionWrap.className = 'materials-composition';
     const header = document.createElement('div');
-    header.className = 'flex-row';
-    header.style.justifyContent = 'space-between';
-    const label = document.createElement('label');
-    label.textContent = 'Složení z evidovaných surovin';
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.textContent = 'Přidat surovinu';
-    addBtn.className = 'production-btn production-btn-secondary production-btn-sm';
+    header.className = 'materials-composition-header';
+    const label = document.createElement('span');
+    label.className = 'muted';
+    label.textContent = labels.composition || 'Složení z evidovaných surovin';
+
+    const addRowBtn = document.createElement('button');
+    addRowBtn.type = 'button';
+    addRowBtn.textContent = labels.addMaterial || 'Přidat surovinu';
+    addRowBtn.className = 'production-btn production-btn-secondary production-btn-sm';
+
     header.appendChild(label);
-    header.appendChild(addBtn);
+    header.appendChild(addRowBtn);
     compositionWrap.appendChild(header);
 
-    const list = document.createElement('div');
-    list.className = 'form-grid composition-list';
-    compositionWrap.appendChild(list);
+    const rowsWrap = document.createElement('div');
+    rowsWrap.className = 'form-grid composition-list';
+    compositionWrap.appendChild(rowsWrap);
 
     function addRow(prefill = {}) {
       const row = document.createElement('div');
       row.className = 'composition-row';
-      row.style.display = 'grid';
-      row.style.gridTemplateColumns = '2fr 1fr auto';
-      row.style.gap = '0.5rem';
 
       const select = document.createElement('select');
-      materials.forEach((mat) => {
+      select.name = 'materialId';
+      materials.forEach((m) => {
         const opt = document.createElement('option');
-        opt.value = mat.id;
-        opt.textContent = `${mat.code || mat.name} — ${mat.name}`;
-        if (prefill.materialId && prefill.materialId === mat.id) opt.selected = true;
+        opt.value = String(m.id);
+        opt.textContent = `${m.code || ''} ${m.name || ''}`.trim();
         select.appendChild(opt);
       });
+      if (prefill.materialId != null) select.value = String(prefill.materialId);
 
-      const share = document.createElement('input');
-      share.type = 'number';
-      share.min = '0';
-      share.max = '100';
-      share.step = '0.1';
-      share.placeholder = 'Podíl (%)';
-      if (prefill.share) share.value = prefill.share;
+      const qty = document.createElement('input');
+      qty.type = 'number';
+      qty.step = '0.01';
+      qty.min = '0';
+      qty.placeholder = 'kg';
+      qty.value = prefill.quantity != null ? String(prefill.quantity) : '';
 
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'danger production-btn production-btn-danger production-btn-sm';
-      remove.textContent = '✕';
-      remove.addEventListener('click', () => row.remove());
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'danger production-btn production-btn-danger production-btn-sm';
+      del.textContent = labels.delete || 'Smazat';
+      del.addEventListener('click', () => row.remove());
 
       row.appendChild(select);
-      row.appendChild(share);
-      row.appendChild(remove);
-      list.appendChild(row);
+      row.appendChild(qty);
+      row.appendChild(del);
+      rowsWrap.appendChild(row);
     }
 
-    addBtn.addEventListener('click', () => addRow());
-    addRow();
-
-    const actionRow = document.createElement('div');
-    actionRow.className = 'form-actions';
-    const submitBtn = document.createElement('button');
-    submitBtn.type = 'submit';
-    submitBtn.textContent = 'Uložit polotovar';
-    submitBtn.classList.add('production-btn', 'production-btn-primary');
-    actionRow.appendChild(submitBtn);
+    addRowBtn.addEventListener('click', () => addRow());
+    addRow(); // vždy alespoň 1 řádek
 
     form.appendChild(compositionWrap);
-    form.appendChild(actionRow);
+
+    const actions = document.createElement('div');
+    actions.className = 'form-actions';
+
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.className = 'production-btn production-btn-primary';
+    submitBtn.textContent = labels.saveIntermediate || 'Uložit polotovar';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'production-btn production-btn-secondary';
+    closeBtn.textContent = labels.close || 'Zavřít';
+    closeBtn.addEventListener('click', () => modal?.close());
+
+    actions.appendChild(submitBtn);
+    actions.appendChild(closeBtn);
+    form.appendChild(actions);
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
+
       const fd = new FormData(form);
-      const composition = Array.from(list.querySelectorAll('.composition-row'))
-        .map((row) => ({
-          materialId: row.querySelector('select')?.value,
-          share: parseFloat(row.querySelector('input')?.value) || 0,
-        }))
-        .filter((c) => c.materialId);
+      const name = String(fd.get('name') || '').trim();
+      if (!name) return;
 
-      if (!composition.length) {
-        showToast('Přidejte alespoň jednu surovinu do složení.', { type: 'error' });
-        return;
-      }
+      const base = String(fd.get('base') || '');
+      const density = Number(fd.get('density') || 0) || null;
+      const note = String(fd.get('note') || '').trim();
 
-      const totalShare = composition.reduce(
-        (sum, c) => sum + (Number.isFinite(c.share) ? c.share : 0),
-        0
-      );
-      if (totalShare <= 0) {
-        showToast('Zadejte podíl alespoň u jedné suroviny.', { type: 'error' });
-        return;
-      }
+      const composition = [];
+      rowsWrap.querySelectorAll('.composition-row').forEach((row) => {
+        const s = row.querySelector('select');
+        const q = row.querySelector('input[type="number"]');
+        const materialId = s ? Number(s.value) : null;
+        const quantity = q ? Number(q.value) : null;
+        if (materialId && quantity && quantity > 0) {
+          composition.push({ materialId, quantity });
+        }
+      });
 
-      const entry = {
-        id: crypto.randomUUID(),
-        name: fd.get('name'),
-        code: fd.get('code'),
-        base: fd.get('base'),
-        solids: parseFloat(fd.get('solids')) || null,
-        viscosity: parseFloat(fd.get('viscosity')) || null,
-        composition,
-        createdAt: new Date().toISOString(),
-      };
-
-      const nextList = [...intermediates, entry];
-      saveList(STORAGE_KEYS.intermediates, nextList);
-      if (typeof onCountChange === 'function') onCountChange(nextList.length);
+      const next = [
+        ...intermediates,
+        {
+          id: Date.now(),
+          name,
+          base,
+          density,
+          note,
+          composition,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      saveList(STORAGE_KEYS.intermediates, next);
+      if (typeof onCountChange === 'function') onCountChange(next.length);
       showToast('Polotovar uložen.');
+      modal?.close();
       renderIntermediates(container, { labels, onCountChange });
     });
 
     formCard.appendChild(form);
+    return formCard;
   }
-  grid.appendChild(formCard);
 
-  // Přehled uložených polotovarů
-  const listCard = createCard(
-    labels.intermediatesListTitle || 'Přehled polotovarů',
-    labels.intermediatesListSubtitle || 'Receptury, které využívají uložené suroviny.'
-  );
+  function openModal() {
+    if (modal) {
+      modal.open();
+      return;
+    }
+    const formCard = buildFormCard();
+    modal = createStandardModal({
+      eyebrow: labels.newIntermediateEyebrow || 'Nový polotovar',
+      title: labels.addIntermediate,
+      subtitle: labels.intermediatesIntro || 'Vytvořte polotovary z již evidovaných surovin.',
+      overlayClass: 'production-intermediates-modal-overlay',
+      modalClass: 'production-intermediates-modal',
+      bodyContent: formCard,
+      onClose: () => {
+        modal = null;
+      },
+    });
+    modal.open();
+  }
 
-  if (!intermediates.length) {
-    const emptyText =
-      labels.emptyIntermediates || 'Zatím nejsou evidovány žádné polotovary.';
-    renderEmptyState(listCard, emptyText);
-  } else {
-    const list = document.createElement('div');
-    list.className = 'list production-card-list';
+  addBtn.addEventListener('click', openModal);
 
-    intermediates.forEach((i) => {
+  // --- Render list ---
+  function matches(item) {
+    const t = state.term;
+    if (!t) return true;
+    const hay = `${item.name || ''} ${item.note || ''}`.toLowerCase();
+    return hay.includes(t);
+  }
+
+  function renderList() {
+    listWrap.innerHTML = '';
+    const filtered = intermediates.filter(matches);
+
+    countLabel.textContent = `${filtered.length} položek`;
+
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = labels.emptyIntermediates || 'Žádné polotovary.';
+      listWrap.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach((i) => {
       const block = document.createElement('div');
-      block.className = 'list-row production-row';
+      block.className = 'materials-item';
 
-      const header = document.createElement('div');
-      header.className = 'flex-row';
-      header.style.justifyContent = 'space-between';
-      header.innerHTML = `<div><div class="strong">${i.name}</div><div class="muted">${i.code || ''}</div></div>`;
+      const title = document.createElement('div');
+      title.className = 'materials-item-title';
+      title.textContent = i.name || 'Polotovar';
+
       const tags = document.createElement('div');
-      tags.className = 'pill-row';
+      tags.className = 'materials-tags';
       if (i.base === 'water') tags.appendChild(createPill('Vodou ředitelný'));
       if (i.base === 'solvent') tags.appendChild(createPill('Rozpouštědlový'));
-      if (i.solids) tags.appendChild(createPill(`Sušina ${i.solids}%`));
-      if (i.viscosity) tags.appendChild(createPill(`Viskozita ${i.viscosity} mPa·s`));
-      header.appendChild(tags);
-      block.appendChild(header);
+      if (i.density) tags.appendChild(createPill(`Hustota: ${i.density}`));
 
-      if (i.composition?.length) {
-        const comp = document.createElement('div');
-        comp.className = 'muted';
-        comp.textContent = `${i.composition.length}× surovina ve složení`;
-        block.appendChild(comp);
-      }
+      const note = document.createElement('div');
+      note.className = 'materials-note';
+      note.textContent = i.note || '—';
 
       const actions = document.createElement('div');
-      actions.className = 'form-actions';
+      actions.className = 'materials-actions';
+
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'danger production-btn production-btn-danger production-btn-sm';
-      del.textContent = labels.delete;
+      del.textContent = labels.delete || 'Smazat';
       del.addEventListener('click', () => {
         const next = intermediates.filter((item) => item.id !== i.id);
         saveList(STORAGE_KEYS.intermediates, next);
@@ -201,16 +288,25 @@ export function renderIntermediates(container, { labels, onCountChange } = {}) {
         showToast('Polotovar odstraněn.');
         renderIntermediates(container, { labels, onCountChange });
       });
+
       actions.appendChild(del);
+
+      block.appendChild(title);
+      block.appendChild(tags);
+      block.appendChild(note);
       block.appendChild(actions);
 
-      list.appendChild(block);
+      listWrap.appendChild(block);
     });
-
-    listCard.appendChild(list);
   }
-  grid.appendChild(listCard);
+
+  filterInput.addEventListener('input', () => {
+    state.term = String(filterInput.value || '').trim().toLowerCase();
+    renderList();
+  });
 
   container.innerHTML = '';
   container.appendChild(grid);
+
+  renderList();
 }

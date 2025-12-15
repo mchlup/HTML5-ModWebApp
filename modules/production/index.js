@@ -1,4 +1,5 @@
-import labels from './lang_cs.js';
+import labelsCs from './lang_cs.js';
+import labelsEn from './lang_en.js';
 import { loadList, STORAGE_KEYS } from './shared.js';
 import { renderMaterials } from './materialsPage.js';
 import { renderIntermediates } from './intermediatesPage.js';
@@ -6,6 +7,25 @@ import { renderRecipes } from './recipesPage.js';
 import { renderOrders } from './ordersPage.js';
 
 let productionStylesLoaded = false;
+
+function getActiveLang() {
+  try {
+    const htmlLang = document.documentElement?.lang?.toLowerCase();
+    if (htmlLang) return htmlLang.split('-')[0];
+  } catch (_) {}
+  try {
+    const stored = localStorage.getItem('lang');
+    if (stored) return stored.toLowerCase();
+  } catch (_) {}
+  return 'cs';
+}
+
+function getLabels() {
+  const lang = getActiveLang();
+  if (lang === 'en') return labelsEn;
+  return labelsCs;
+}
+
 
 function ensureproductionStylesLoaded() {
   if (productionStylesLoaded) return;
@@ -30,7 +50,7 @@ function ensureproductionStylesLoaded() {
   document.head.appendChild(link);
 }
 
-function buildKpis(counts) {
+function buildKpis(kpiCounts) {
   const wrap = document.createElement('div');
   wrap.className = 'dashboard-widgets';
 
@@ -54,7 +74,7 @@ function buildKpis(counts) {
     const value = document.createElement('div');
     value.className = 'kpi-value';
     value.dataset.kpiKey = kpi.key;
-    value.textContent = String(counts[kpi.key] ?? 0);
+    value.textContent = String(kpiCounts[kpi.key] ?? 0);
     card.appendChild(value);
 
     wrap.appendChild(card);
@@ -83,6 +103,7 @@ function getInitialCounts() {
 }
 
 function renderproduction(container, { currentSubId, runtimeConfig } = {}) {
+  const labels = getLabels();
   // zajistí načtení CSS specifického pro modul production
   ensureproductionStylesLoaded();
   const wrap = document.createElement('div');
@@ -96,59 +117,18 @@ function renderproduction(container, { currentSubId, runtimeConfig } = {}) {
   subtitle.className = 'muted';
   subtitle.textContent = labels.subtitle;
   wrap.appendChild(subtitle);
-
+  
+  // počáteční hodnoty počítadel pro updateKpi()
+  // (karty s KPI už v tomhle modulu nevykreslujeme, ale počítadla používají stránky Suroviny / Receptury)
   const counts = getInitialCounts();
-  const kpis = buildKpis(counts);
-  wrap.appendChild(kpis);
 
-  const nav = document.createElement('div');
-  nav.className = 'tab-nav';
-  const tabs = [
-    { id: 'suroviny', label: labels.materials },
-    { id: 'polotovary', label: labels.intermediates },
-    { id: 'receptury', label: labels.recipes },
-    { id: 'zakazky', label: labels.orders },
-  ];
   const moduleId = 'production';
-  const tabIds = tabs.map((t) => t.id);
+  const tabIds = ['suroviny', 'polotovary', 'receptury', 'zakazky'];
   let activeTab = tabIds.includes(currentSubId) ? currentSubId : 'suroviny';
-
-  tabs.forEach((tab) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = tab.label;
-    btn.dataset.tab = tab.id;
-    btn.className = tab.id === activeTab ? 'tab active' : 'tab';
-    if (tab.description) {
-      btn.title = tab.description;
-    }
-    btn.addEventListener('click', () => {
-      if (window.location.hash !== `#/${moduleId}/${tab.id}`) {
-        window.location.hash = `#/${moduleId}/${tab.id}`;
-      } else {
-        activeTab = tab.id;
-        nav.querySelectorAll('button').forEach((b) => {
-          b.classList.toggle('active', b.dataset.tab === activeTab);
-        });
-        renderNavVisibility();
-        renderActiveTab();
-      }
-    });
-    nav.appendChild(btn);
-  });
 
   const content = document.createElement('div');
   content.className = 'tab-content';
   wrap.appendChild(content);
-
-  const renderNavVisibility = () => {
-    const shouldShowNav = activeTab !== 'suroviny';
-    if (shouldShowNav && !nav.parentNode) {
-      wrap.insertBefore(nav, content);
-    } else if (!shouldShowNav && nav.parentNode) {
-      nav.parentNode.removeChild(nav);
-    }
-  };
 
   function updateKpi(key, value) {
     counts[key] = value;
@@ -196,7 +176,6 @@ function renderproduction(container, { currentSubId, runtimeConfig } = {}) {
     }
   }
 
-  renderNavVisibility();
   renderActiveTab();
 
   container.innerHTML = '';
@@ -207,13 +186,13 @@ export default {
   id: 'production',
   meta: {
     iconClass: 'fa-solid fa-vial-circle-check',
-    description: labels.subtitle,
-    labels: { cs: labels.title },
+    description: labelsCs.subtitle,
+    labels: { cs: labelsCs.title, en: labelsEn.title },
     navItems: [
-      { id: 'suroviny', labels: { cs: labels.materials } },
-      { id: 'polotovary', labels: { cs: labels.intermediates } },
-      { id: 'receptury', labels: { cs: labels.recipes } },
-      { id: 'zakazky', labels: { cs: labels.orders } },
+      { id: 'suroviny', labels: { cs: labelsCs.materials, en: labelsEn.materials } },
+      { id: 'polotovary', labels: { cs: labelsCs.intermediates, en: labelsEn.intermediates } },
+      { id: 'receptury', labels: { cs: labelsCs.recipes, en: labelsEn.recipes } },
+      { id: 'zakazky', labels: { cs: labelsCs.orders, en: labelsEn.orders } },
     ],
   },
   render: renderproduction,

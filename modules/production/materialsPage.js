@@ -5,10 +5,19 @@ import {
   loadUserColumns,
   saveUserColumns,
 } from '../../core/columnViewService.js';
-import { createCard, STORAGE_KEYS, saveList, truncate } from './shared.js';
+import {
+  createCard,
+  createStandardListCard,
+  createStandardModal,
+  modulePath,
+  STORAGE_KEYS,
+  saveList,
+  truncate,
+} from './shared.js';
 
-const MATERIALS_API = './modules/production/api/materials.php';
-const SUPPLIERS_API = './modules/suppliers/api/suppliers.php';
+// Cesty generujeme z import.meta.url, aby nebyl potřeba hardcode názvu modulu
+const MATERIALS_API = modulePath('./api/materials.php', import.meta.url);
+const SUPPLIERS_API = modulePath('../suppliers/api/suppliers.php', import.meta.url);
 const MODULE_CODE = 'production';
 const VIEW_CODE = 'materials';
 
@@ -55,7 +64,35 @@ function generateMaterialCode(materials) {
 export async function renderMaterials(container, { labels, onMaterialCountChange } = {}) {
   const PAGE_SIZE = 20;
 
-  const grid = document.createElement('div');
+  // --- Sjednocená šablona listovací části (toolbar + tabulka + stránkování) ---
+  const listTpl = createStandardListCard({
+    title: 'Evidence surovin',
+    subtitle:
+      'Přehled surovin, které lze dále použít v polotovarech, recepturách a zakázkách.',
+    filterLabel: 'Filtrovat suroviny',
+    filterName: 'materialsFilter',
+    filterPlaceholder: 'Hledat podle kódu, názvu nebo dodavatele',
+    addButtonText: 'Přidat surovinu',
+  });
+
+  const {
+    grid,
+    listCard,
+    toolbar,
+    filterInput,
+    addBtn: addBtnTop,
+    columnSettingsBtn,
+    countLabel,
+    table,
+    thead: head,
+    tbody,
+    pagination,
+    pageInfo,
+    prevBtn,
+    nextBtn,
+  } = listTpl;
+
+  // zachováme původní layout (form vlevo, tabulka vpravo)
   grid.className = 'form-grid materials-layout';
 
   const formCard = createCard(
@@ -89,14 +126,22 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     <div class="form-grid" style="${rowStyle}">
       <label>
         Dodavatel
-        <select name="supplier">
-          <option value="">(vyberte dodavatele)</option>
-        </select>
+        <div class="materials-supplier-inline">
+          <select name="supplier">
+            <option value="">(vyberte dodavatele)</option>
+          </select>
+          <button type="button" class="production-btn production-btn-secondary production-btn-sm" data-role="add-supplier">+ Nový dodavatel</button>
+        </div>
       </label>
       <label>
         Cena / kg
         <input name="price" type="number" min="0" step="0.01" placeholder="120" />
       </label>
+      <div>
+        <button type="button" data-role="add-supplier" class="secondary">
+          + Nový dodavatel
+        </button>
+      </div>
     </div>
 
     <div class="form-grid" style="${rowStyle}">
@@ -149,33 +194,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   nameDatalist.id = 'production-material-name-list';
   formCard.appendChild(nameDatalist);
 
-  const listCard = createCard(
-    'Evidence surovin',
-    'Přehled surovin, které lze dále použít v polotovarech, recepturách a zakázkách.'
-  );
-  listCard.classList.add('materials-card');
-
-  const toolbar = document.createElement('div');
-  toolbar.className = 'table-toolbar materials-toolbar';
-  toolbar.innerHTML = `
-    <div class="materials-toolbar-inner">
-      <label class="materials-filter">
-        <span class="muted materials-filter-label">Filtrovat suroviny</span>
-        <input type="search" name="materialsFilter" placeholder="Hledat podle kódu, názvu nebo dodavatele" />
-      </label>
-      <div class="materials-toolbar-actions">
-        <span class="muted materials-count"></span>
-        <button type="button" class="production-btn production-btn-secondary" data-role="column-settings">
-          ⚙ Zobrazené sloupce
-        </button>
-      </div>
-    </div>
-  `;
-  listCard.appendChild(toolbar);
-
-  const table = document.createElement('table');
-  table.className = 'striped materials-table';
-  const head = document.createElement('thead');
+  // tabulková hlavička v šabloně
   head.innerHTML = `
     <tr>
       <th data-sort="code" class="sortable">Kód</th>
@@ -187,40 +206,10 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       <th style="width:1%;white-space:nowrap;"></th>
     </tr>
   `;
-  const tbody = document.createElement('tbody');
-  table.appendChild(head);
-  table.appendChild(tbody);
 
-  const tableWrapper = document.createElement('div');
-  tableWrapper.className = 'table-scroll';
-  tableWrapper.appendChild(table);
-
-  const resultsBlock = document.createElement('div');
-  resultsBlock.className = 'materials-results-block';
-  resultsBlock.appendChild(tableWrapper);
-  listCard.appendChild(resultsBlock);
-
-  const pagination = document.createElement('div');
-  pagination.className = 'materials-pagination';
-  pagination.innerHTML = `
-    <button type="button" data-page="prev">‹ Předchozí</button>
-    <span class="materials-page-info"></span>
-    <button type="button" data-page="next">Další ›</button>
-  `;
-  listCard.appendChild(pagination);
-
-  const toggleWrap = document.createElement('div');
-  toggleWrap.className = 'form-actions materials-toggle';
-  const toggleBtn = document.createElement('button');
-  toggleBtn.type = 'button';
-  toggleBtn.textContent = 'Přidat surovinu';
-  toggleBtn.className = 'production-btn production-btn-primary materials-add-btn';
-  toggleWrap.appendChild(toggleBtn);
-
-  grid.appendChild(listCard);
+  // Formulář je pouze v modálu (openMaterialModal), na stránce se nezobrazuje inline
 
   container.innerHTML = '';
-  container.appendChild(toggleWrap);
   container.appendChild(grid);
 
   let materials = [];
@@ -238,16 +227,12 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   let supplierLoadErrorShown = false;
   let columnModal = null;
   let materialModal = null;
+  let supplierModal = null;
 
   const submitBtn = form.querySelector('button[data-role="save"]');
   const cancelEditBtn = form.querySelector('button[data-role="cancel-edit"]');
-  const filterInput = toolbar.querySelector('input[name="materialsFilter"]');
-  const columnSettingsBtn = toolbar.querySelector('[data-role="column-settings"]');
-  const countLabel = toolbar.querySelector('.materials-count');
-
-  const pageInfo = pagination.querySelector('.materials-page-info');
-  const prevBtn = pagination.querySelector('[data-page="prev"]');
-  const nextBtn = pagination.querySelector('[data-page="next"]');
+  
+  // filterInput / columnSettingsBtn / countLabel / pageInfo / prevBtn / nextBtn dodává šablona
 
   submitBtn.classList.add('production-btn', 'production-btn-primary');
   cancelEditBtn.classList.add('production-btn', 'production-btn-secondary');
@@ -266,57 +251,33 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
   const safetyInput = form.elements.namedItem('safety');
   const noteInput = form.elements.namedItem('note');
 
+  const addSupplierButton = form.querySelector('[data-role="add-supplier"]');
+
+  if (addSupplierButton) {
+    addSupplierButton.addEventListener('click', () => {
+      openSupplierModal();
+    });
+  }
+
   function buildMaterialModal() {
     if (materialModal) return materialModal;
 
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay materials-modal-overlay';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'production-modal-card materials-modal-card';
+    wrapper.appendChild(formCard);
 
-    const modal = document.createElement('div');
-    modal.className = 'modal materials-modal';
-
-    const header = document.createElement('div');
-    header.className = 'modal-header materials-modal-header';
-    const titleWrap = document.createElement('div');
-    titleWrap.innerHTML = `
-      <p class="modal-eyebrow">Nová surovina</p>
-      <h3>${labels.addMaterial}</h3>
-      <p class="materials-modal-subtitle">Zadejte parametry suroviny a uložte ji.</p>
-    `;
-
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'modal-close';
-    closeBtn.innerHTML = '&times;';
-
-    header.appendChild(titleWrap);
-    header.appendChild(closeBtn);
-
-    const body = document.createElement('div');
-    body.className = 'materials-modal-body';
-    body.appendChild(formCard);
-
-    modal.appendChild(header);
-    modal.appendChild(body);
-    overlay.appendChild(modal);
-
-    const handleClose = () => {
-      if (overlay.parentNode) {
-        overlay.parentNode.removeChild(overlay);
-      }
-      if (!document.querySelector('.modal-overlay')) {
-        document.body.classList.remove('modal-open');
-      }
-    };
-
-    closeBtn.addEventListener('click', handleClose);
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) {
-        handleClose();
-      }
+    materialModal = createStandardModal({
+      eyebrow: labels.newMaterialEyebrow || 'Nová surovina',
+      title: labels.addMaterial,
+      subtitle: 'Zadejte parametry suroviny a uložte ji.',
+      overlayClass: 'materials-modal-overlay',
+      modalClass: 'materials-modal',
+      bodyContent: wrapper,
+      onClose: () => {
+        materialModal = null;
+      },
     });
 
-    materialModal = { overlay, modal, handleClose };
     return materialModal;
   }
 
@@ -336,6 +297,93 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
       materialModal.handleClose();
     }
   }
+  
+  function buildSupplierModal() {
+    if (supplierModal) return supplierModal;
+
+    const form = document.createElement('form');
+    form.className = 'supplier-inline-form';
+    form.innerHTML = `
+      <label>Název dodavatele<input name="name" required placeholder="Např. Acme s.r.o." /></label>
+      <label>IČO<input name="ico" placeholder="12345678" /></label>
+      <label>Poznámka<textarea name="note" rows="2" placeholder="Kontaktní osoba, telefon, ..."></textarea></label>
+    `;
+
+    const actions = document.createElement('div');
+    actions.className = 'form-actions';
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'production-btn production-btn-primary';
+    submit.textContent = 'Uložit dodavatele';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'production-btn production-btn-secondary';
+    cancel.textContent = labels.close || 'Zavřít';
+    cancel.addEventListener('click', () => supplierModal?.close());
+    actions.appendChild(submit);
+    actions.appendChild(cancel);
+    form.appendChild(actions);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'production-modal-card materials-modal-card';
+    wrapper.appendChild(form);
+
+    supplierModal = createStandardModal({
+      eyebrow: 'Nový dodavatel',
+      title: 'Dodavatel',
+      subtitle: 'Zadejte údaje dodavatele a uložte jej.',
+      overlayClass: 'materials-supplier-modal-overlay',
+      modalClass: 'materials-supplier-modal',
+      bodyContent: wrapper,
+      onClose: () => {
+        supplierModal = null;
+      },
+    });
+    
+    // Helpery pro komfortní použití z modálu „Přidat surovinu“
+    supplierModal.reset = () => {
+      try { form.reset(); } catch (_) {}
+    };
+    supplierModal.focusFirst = () => {
+      const el = form.querySelector('input, textarea, select, button');
+      el?.focus?.();
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const data = Object.fromEntries(new FormData(form).entries());
+        const qs = new URLSearchParams({ action: 'create', ...data });
+        const res = await apiFetch(`${SUPPLIERS_API}?${qs.toString()}`);
+        await loadSuppliers();
+        supplierSelect.value = res?.id || supplierSelect.value;
+        showToast('Dodavatel uložen.');
+        supplierModal.close();
+      } catch (err) {
+        showToast(err?.message || 'Uložení dodavatele se nezdařilo.', 'error');
+      }
+    });
+
+    return supplierModal;
+  }
+
+  function openSupplierModal() {
+    const modalObj = buildSupplierModal();
+    if (typeof modalObj.reset === 'function') modalObj.reset();
+
+    // Preferujeme sjednocený open() z createStandardModal (řeší ESC i znovu-připojení overlay navrch)
+    if (typeof modalObj.open === 'function') {
+      modalObj.open();
+    } else {
+      if (!modalObj.overlay.isConnected) document.body.appendChild(modalObj.overlay);
+      document.body.classList.add('modal-open');
+    }
+
+    setTimeout(() => {
+      if (typeof modalObj.focusFirst === 'function') modalObj.focusFirst();
+    }, 50);
+  }
+
 
   nameInput.setAttribute('list', nameDatalist.id);
   
@@ -469,7 +517,7 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     cancelEditBtn.style.display = 'none';
   }
 
-  toggleBtn.addEventListener('click', () => {
+  addBtnTop.addEventListener('click', () => {
     resetFormState();
     openMaterialModal();
   });
@@ -1015,21 +1063,6 @@ export async function renderMaterials(container, { labels, onMaterialCountChange
     if (duplicateName) {
       showToast('Surovina s tímto názvem už existuje.', { type: 'error' });
       return;
-    }
-
-    if (payload.supplier) {
-      const duplicateSupplier = materials.find(
-        (m) =>
-          m.supplier &&
-          m.supplier.toLowerCase() === lowerSupplier &&
-          m.id !== editingId
-      );
-      if (duplicateSupplier) {
-        showToast('Tento dodavatel je již evidován u jiné suroviny.', {
-          type: 'error',
-        });
-        return;
-      }
     }
 
     try {

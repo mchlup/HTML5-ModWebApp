@@ -1,8 +1,30 @@
-+/* production – SUROVINY (materials) */
-+
-+/* karta s tabulkou surovin */
-+.materials-card {
-+  margin-top: 1rem;
+/* Orders – zákazník + tlačítko v jednom řádku */
+.materials-supplier-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.materials-supplier-inline select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Suroviny – dodavatel + tlačítko v jednom řádku */
+.materials-supplier-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.materials-supplier-inline select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* karta s tabulkou surovin */
+.materials-card {
+  margin-top: 1rem;
 }
 
 /* horní řádek: vyhledávání  "Zobrazené sloupce" */
@@ -36,9 +58,17 @@
 
 .materials-toolbar-actions {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: flex-start;
+  gap: 0.75rem;
   margin-left: auto; /* "Zobrazené sloupce" úplně doprava */
+}
+
+/* tlačítka vpravo – „Přidat…“ má být nad „Zobrazené sloupce“ */
+.materials-toolbar-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
 }
 
 .materials-count {
@@ -418,7 +448,8 @@ body.theme-dark .materials-table tbody tr:hover {
   white-space: nowrap;
 }
 
-.materials-modal {
+.materials-modal,
+.production-modal {
   max-width: 780px;
   width: 100%;
   border-radius: 1rem;
@@ -426,7 +457,8 @@ body.theme-dark .materials-table tbody tr:hover {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
 }
 
-.materials-modal-header h3 {
+.materials-modal-header h3,
+.production-modal-header h3 {
   margin: 0;
 }
 
@@ -438,24 +470,28 @@ body.theme-dark .materials-table tbody tr:hover {
   margin: 0 0 0.15rem;
 }
 
-.materials-modal-subtitle {
+.materials-modal-subtitle,
+.production-modal-subtitle {
   margin: 0.25rem 0 0;
   opacity: 0.8;
 }
 
-.materials-modal-body {
+.materials-modal-body,
+.production-modal-body {
   max-height: 70vh;
   overflow-y: auto;
   padding-top: 0.25rem;
 }
 
-.materials-modal-card {
+.materials-modal-card,
+.production-modal-card {
   box-shadow: none;
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
 }
 
-body.theme-dark .materials-modal-card {
+body.theme-dark .materials-modal-card,
+.production-modal-card {
   background: rgba(15, 23, 42, 0.95);
   border-color: rgba(148, 163, 184, 0.25);
 }
@@ -659,3 +695,8 @@ button.production-btn[disabled] {
   cursor: default;
   transform: none;
 }
+
+
+/* Production – sjednocený modál */
+.production-modal-close{font-size:1.6rem;line-height:1;padding:0.15rem 0.55rem;}
+.production-modal-body{max-height:70vh;overflow-y:auto;padding-top:0.25rem;}

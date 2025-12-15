@@ -38,4 +38,9 @@ export default {
   ordersListTitle: 'Zakázky',
   ordersListSubtitle: 'Rozpracované a dokončené zákaznické receptury.',
   emptyOrdersCreateHint: 'Pro založení zakázky vytvořte nejdříve recepturu.',
+  newItem: "Nová položka",
+  close: "Zavřít",
+  newMaterialEyebrow: "Nová surovina",
+  newIntermediateEyebrow: "Nový polotovar",
+  newOrderEyebrow: "Nová zakázka"
 };

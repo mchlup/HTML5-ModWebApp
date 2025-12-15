@@ -3,6 +3,7 @@ export const STORAGE_KEYS = {
   intermediates: 'production_intermediates',
   recipes: 'production_recipes',
   orders: 'production_orders',
+  customers: 'production_customers',
 };
 
 export function loadList(key) {
@@ -133,4 +134,237 @@ export function truncate(text, maxLen) {
   if (!text) return '';
   if (text.length <= maxLen) return text;
   return `${text.slice(0, maxLen - 1)}…`;
+}
+
+/**
+ * Bezpečná tvorba cest k assetům / API pomocí import.meta.url.
+ * Díky tomu není nutné hardcodovat název modulu do řetězců (např. "./modules/production/").
+ *
+ * @param {string} relativePath Např. './api/materials.php' nebo '../suppliers/api/suppliers.php'
+ * @param {string} metaUrl Typicky import.meta.url volajícího modulu
+ * @returns {string} Absolutní cesta (pathname) v rámci webu, např. '/html5/modules/production/api/materials.php'
+ */
+export function modulePath(relativePath, metaUrl) {
+  try {
+    return new URL(relativePath, metaUrl).pathname;
+  } catch (err) {
+    // fallback – vrátíme původní cestu (lepší než shodit UI)
+    console.warn('[production] modulePath() selhalo pro', relativePath, err);
+    return relativePath;
+  }
+}
+
+/**
+ * Šablona pro sjednocené listovací stránky (Suroviny/Receptury).
+ * Vytvoří kartu se standardním toolbar  tabulka  stránkování.
+ */
+export function createStandardListCard({
+  title,
+  subtitle,
+  filterLabel,
+  filterName,
+  filterPlaceholder,
+  addButtonText,
+  addButtonDisabled = false,
+} = {}) {
+  const grid = document.createElement('div');
+  grid.className = 'form-grid production-grid';
+
+  const listCard = createCard(title, subtitle);
+  listCard.classList.add('materials-card');
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'table-toolbar materials-toolbar';
+  toolbar.innerHTML = `
+    <div class="materials-toolbar-inner">
+      <label class="materials-filter">
+        <span class="muted materials-filter-label"></span>
+        <input type="search" name="" placeholder="" />
+      </label>
+      <div class="materials-toolbar-actions">
+        <span class="muted materials-count"></span>
+        <div class="materials-toolbar-buttons">
+          <button type="button" class="production-btn production-btn-secondary" data-role="column-settings">
+            ⚙ Zobrazené sloupce
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  const filterLabelEl = toolbar.querySelector('.materials-filter-label');
+  if (filterLabelEl) filterLabelEl.textContent = filterLabel || 'Filtrovat';
+
+  const filterInput = toolbar.querySelector('input[type="search"]');
+  if (filterInput) {
+    filterInput.name = filterName || 'filter';
+    filterInput.placeholder = filterPlaceholder || '';
+  }
+
+  const actions = toolbar.querySelector('.materials-toolbar-actions');
+  const buttons = toolbar.querySelector('.materials-toolbar-buttons');
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.textContent = addButtonText || 'Přidat';
+  addBtn.className = 'production-btn production-btn-primary materials-add-btn';
+  addBtn.disabled = !!addButtonDisabled;
+  // dle požadavku: tlačítko „Přidat…“ má být o řádek výš nad „Zobrazené sloupce“
+  buttons?.prepend(addBtn);
+
+  listCard.appendChild(toolbar);
+
+  const table = document.createElement('table');
+  table.className = 'striped materials-table';
+  const thead = document.createElement('thead');
+  const tbody = document.createElement('tbody');
+  table.appendChild(thead);
+  table.appendChild(tbody);
+
+  const tableWrapper = document.createElement('div');
+  tableWrapper.className = 'table-scroll';
+  tableWrapper.appendChild(table);
+
+  const resultsBlock = document.createElement('div');
+  resultsBlock.className = 'materials-results-block';
+  resultsBlock.appendChild(tableWrapper);
+  listCard.appendChild(resultsBlock);
+
+  const pagination = document.createElement('div');
+  pagination.className = 'materials-pagination';
+  pagination.innerHTML = `
+    <button type="button" data-page="prev">‹ Předchozí</button>
+    <span class="materials-page-info"></span>
+    <button type="button" data-page="next">Další ›</button>
+  `;
+  listCard.appendChild(pagination);
+
+  const columnSettingsBtn = toolbar.querySelector('[data-role="column-settings"]');
+  const countLabel = toolbar.querySelector('.materials-count');
+  const pageInfo = pagination.querySelector('.materials-page-info');
+  const prevBtn = pagination.querySelector('[data-page="prev"]');
+  const nextBtn = pagination.querySelector('[data-page="next"]');
+
+  prevBtn?.classList.add('production-btn', 'production-btn-secondary', 'production-btn-sm');
+  nextBtn?.classList.add('production-btn', 'production-btn-secondary', 'production-btn-sm');
+
+  grid.appendChild(listCard);
+
+  return {
+    grid,
+    listCard,
+    toolbar,
+    filterInput,
+    actions,
+    addBtn,
+    columnSettingsBtn,
+    countLabel,
+    table,
+    thead,
+    tbody,
+    pagination,
+    pageInfo,
+    prevBtn,
+    nextBtn,
+  };
+}
+
+
+/**
+ * Standardizovaný modál pro modul production.
+ * - sjednocená struktura (overlay -> modal -> header/body)
+ * - zavření: X tlačítko, klik mimo, ESC
+ *
+ * @param {object} options
+ * @param {string} [options.eyebrow]
+ * @param {string} options.title
+ * @param {string} [options.subtitle]
+ * @param {string} [options.overlayClass]
+ * @param {string} [options.modalClass]
+ * @param {HTMLElement} options.bodyContent
+ * @param {Function} [options.onClose]
+ */
+export function createStandardModal({
+  eyebrow = '',
+  title,
+  subtitle = '',
+  overlayClass = '',
+  modalClass = '',
+  bodyContent,
+  onClose,
+}) {
+  const overlay = document.createElement('div');
+  overlay.className = `modal-overlay production-modal-overlay ${overlayClass}`.trim();
+
+  const modal = document.createElement('div');
+  modal.className = `modal production-modal ${modalClass}`.trim();
+
+  const header = document.createElement('div');
+  header.className = 'modal-header production-modal-header';
+
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'production-modal-titlewrap';
+
+  titleWrap.innerHTML = `
+    ${eyebrow ? `<p class="modal-eyebrow">${eyebrow}</p>` : ''}
+    <h3></h3>
+    ${subtitle ? `<p class="production-modal-subtitle">${subtitle}</p>` : ''}
+  `.trim();
+
+  const titleEl = titleWrap.querySelector('h3');
+  if (titleEl) titleEl.textContent = title || '';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'modal-close production-modal-close';
+  closeBtn.setAttribute('aria-label', 'Zavřít');
+  closeBtn.innerHTML = '&times;';
+
+  header.appendChild(titleWrap);
+  header.appendChild(closeBtn);
+
+  const body = document.createElement('div');
+  body.className = 'production-modal-body';
+  if (bodyContent) body.appendChild(bodyContent);
+
+  modal.appendChild(header);
+  modal.appendChild(body);
+  overlay.appendChild(modal);
+
+  let escHandler = null;
+
+  const handleClose = () => {
+    document.body.classList.remove('modal-open');
+    if (escHandler) {
+      document.removeEventListener('keydown', escHandler);
+      escHandler = null;
+    }
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    if (typeof onClose === 'function') onClose();
+  };
+
+  const open = () => {
+    if (!overlay.isConnected) document.body.appendChild(overlay);
+    document.body.classList.add('modal-open');
+
+    escHandler = (e) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', escHandler);
+  };
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) handleClose();
+  });
+  closeBtn.addEventListener('click', handleClose);
+
+  return {
+    overlay,
+    modal,
+    header,
+    body,
+    open,
+    close: handleClose,
+    setTitle: (t) => {
+      if (titleEl) titleEl.textContent = t || '';
+    },
+  };
 }
