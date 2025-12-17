@@ -1,0 +1,7 @@
+{
+  "id": "customers",
+  "name": "Zákazníci",
+  "description": "Centrální modul pro správu zákazníků napříč aplikací.",
+  "version": "1.0.0",
+  "category": "production"
+}

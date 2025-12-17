@@ -108,6 +108,11 @@ export function renderIntermediates(container, { labels, onCountChange } = {}) {
     header.appendChild(addRowBtn);
     compositionWrap.appendChild(header);
 
+    const unitHint = document.createElement('div');
+    unitHint.className = 'production-unit-hint';
+    unitHint.textContent = 'Množství složek zadávejte v kilogramech (kg).';
+    compositionWrap.appendChild(unitHint);
+
     const rowsWrap = document.createElement('div');
     rowsWrap.className = 'form-grid composition-list';
     compositionWrap.appendChild(rowsWrap);

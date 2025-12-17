@@ -7,11 +7,16 @@ import {
 } from '../../core/columnViewService.js';
 import {
   createStandardListCard,
+  createStandardModal,
+  buildDetailList,
   modulePath,
   loadList,
   saveList,
   STORAGE_KEYS,
-  bindDetailModal,
+  normalizeRecipeComposition,
+  sumCompositionWeightKg,
+  formatKg,
+  resolveRecipeComponentLabel,
 } from './shared.js';
 
 // Cesty generujeme z import.meta.url, aby nebyl potřeba hardcode názvu modulu
@@ -100,13 +105,13 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
           : null,
       name: row.name || row.title || '',
       shade: row.shade || row.color || '',
-      base: row.base || row.base_type || '',
-      solids:
-        row.solids != null && row.solids !== ''
-          ? Number(row.solids)
+      gloss: row.gloss || '',
+      batchSize:
+        row.batchSize != null
+          ? Number(row.batchSize)
+          : row.batch_size != null
+          ? Number(row.batch_size)
           : null,
-      voc:
-        row.voc != null && row.voc !== '' ? Number(row.voc) : null,
       note: row.note || '',
       componentsCount,
       composition,
@@ -217,39 +222,20 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
         render: (r) => r.shade || '',
       },
       {
-        id: 'base',
-        label: 'Základ',
+        id: 'gloss',
+        label: 'Lesk',
         sortable: true,
         defaultVisible: true,
-        sortValue: (r) => (r.base || '').toString().toLowerCase(),
-        render: (r) => {
-          if (r.base === 'interior') return 'Interiér';
-          if (r.base === 'exterior') return 'Exteriér';
-          return r.base || '';
-        },
+        sortValue: (r) => (r.gloss || '').toString().toLowerCase(),
+        render: (r) => r.gloss || '',
       },
       {
-        id: 'solids',
-        label: 'Suchý zbytek (%)',
+        id: 'batchSize',
+        label: 'Dávka (kg)',
         sortable: true,
         defaultVisible: true,
-        sortValue: (r) =>
-          r.solids != null && !Number.isNaN(r.solids) ? Number(r.solids) : -1,
-        render: (r) =>
-          r.solids != null && !Number.isNaN(r.solids)
-            ? String(r.solids)
-            : '',
-        width: '10%',
-      },
-      {
-        id: 'voc',
-        label: 'VOC (g/l)',
-        sortable: true,
-        defaultVisible: true,
-        sortValue: (r) =>
-          r.voc != null && !Number.isNaN(r.voc) ? Number(r.voc) : -1,
-        render: (r) =>
-          r.voc != null && !Number.isNaN(r.voc) ? String(r.voc) : '',
+        sortValue: (r) => (r.batchSize != null && !Number.isNaN(r.batchSize) ? Number(r.batchSize) : -1),
+        render: (r) => (r.batchSize != null && !Number.isNaN(r.batchSize) ? formatKg(r.batchSize, { decimals: 2 }) : ''),
         width: '10%',
       },
       {
@@ -408,64 +394,97 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
 
       tbody.appendChild(tr);
 
-      // Klik na řádek -> detail receptury (mimo akční tlačítka)
-      bindDetailModal(tr, {
-        item: recipe,
-        eyebrow: 'DETAIL RECEPTURY',
-        title: recipe?.name || 'Receptura',
-        subtitle: recipe?.shade ? `Odstín: ${recipe.shade}` : '',
-        overlayClass: 'production-detail-modal-overlay',
-        modalClass: 'production-detail-modal',
-        fields: [
-          { label: 'Název', value: (r) => r?.name },
-          { label: 'Odstín / kód', value: (r) => r?.shade },
-          { label: 'Základ', value: (r) => r?.base },
-          {
-            label: 'Sušina (%)',
-            value: (r) => (r?.solids != null && r.solids !== '' ? `${r.solids} %` : null),
-          },
-          {
-            label: 'VOC (g/l)',
-            value: (r) => (r?.voc != null && r.voc !== '' ? `${r.voc} g/l` : null),
-          },
-          { label: 'Počet složek', value: (r) => r?.componentsCount },
-          {
-            label: 'Poznámka',
-            value: (r) => r?.note,
-          },
-          {
-            label: 'Složení',
-            value: (r) => {
-              const comp = Array.isArray(r?.composition) ? r.composition : [];
-              if (!comp.length) return '—';
+      // Klik na řádek -> detail receptury (načítá se až při otevření, aby obsahoval i složení)
+      const isInteractive = (target) => {
+        if (!(target instanceof Element)) return false;
+        return !!target.closest('button, a, input, select, textarea, label, [data-no-row-click], .form-actions, .materials-actions');
+      };
 
-              const ul = document.createElement('ul');
-              ul.className = 'production-detail-ul';
+      const openDetail = async () => {
+        try {
+          const detail = await apiGet(`${RECIPES_API}?id=${encodeURIComponent(String(recipe.id))}`);
+          const item = detail && (detail.item || detail.data || detail.recipe);
+          const full = item ? mapRecipeRow(item) : recipe;
+          if (item && Array.isArray(item.composition)) {
+            full.composition = item.composition;
+            full.componentsCount = item.composition.length;
+          }
 
-              comp.forEach((c) => {
-                const li = document.createElement('li');
-                const type = c.type || c.itemType || c.kind || '';
-                const id = c.materialId ?? c.intermediateId ?? c.itemId ?? c.id;
-                const qty = c.quantity ?? c.qty ?? c.amount;
+          const comp = normalizeRecipeComposition(full);
+          const totalKg = sumCompositionWeightKg(comp);
 
-                let name = '';
-                if (type === 'intermediate') {
-                  const it = (intermediates || []).find((x) => Number(x.id) === Number(id));
-                  name = it?.name || '';
-                } else {
-                  const m = (materials || []).find((x) => Number(x.id) === Number(id));
-                  name = m?.name || '';
-                }
+          const bodyContent = buildDetailList(
+            [
+              { label: 'Název', value: (r) => r?.name },
+              { label: 'Odstín / kód', value: (r) => r?.shade },
+              { label: 'Lesk', value: (r) => r?.gloss },
+              {
+                label: 'Dávka (kg)',
+                value: (r) =>
+                  r?.batchSize != null && !Number.isNaN(r.batchSize)
+                    ? `${formatKg(r.batchSize, { decimals: 2 })} kg`
+                    : '—',
+              },
+              { label: 'Počet složek', value: (r) => r?.componentsCount },
+              {
+                label: 'Celková hmotnost složení',
+                value: () => (comp.length ? `${formatKg(totalKg)} kg` : '—'),
+              },
+              { label: 'Poznámka', value: (r) => r?.note },
+              {
+                label: 'Složení',
+                value: () => {
+                  if (!comp.length) return '—';
+                  const wrap = document.createElement('div');
+                  const ul = document.createElement('ul');
+                  ul.className = 'production-detail-ul';
+                  comp.forEach((c) => {
+                    const li = document.createElement('li');
+                    const name = resolveRecipeComponentLabel(c, {
+                      rawMaterials: materials,
+                      intermediates,
+                    });
+                    li.textContent = `${name} – ${formatKg(c.amount)} kg`;
+                    ul.appendChild(li);
+                  });
+                  const total = document.createElement('div');
+                  total.className = 'production-detail-total';
+                  total.textContent = `Celkem: ${formatKg(totalKg)} kg`;
+                  wrap.appendChild(ul);
+                  wrap.appendChild(total);
+                  return wrap;
+                },
+              },
+            ],
+            full,
+          );
 
-                const qtyText = qty != null && qty !== '' ? ` – ${qty} kg` : '';
-                li.textContent = `${name || 'Položka'}${qtyText}`;
-                ul.appendChild(li);
-              });
+          const modal = createStandardModal({
+            eyebrow: 'DETAIL RECEPTURY',
+            title: full?.name || 'Receptura',
+            subtitle: full?.shade ? `Odstín: ${full.shade}` : '',
+            overlayClass: 'production-detail-modal-overlay',
+            modalClass: 'production-detail-modal',
+            bodyContent,
+          });
+          modal.open();
+        } catch (err) {
+          console.error(err);
+          showToast('Nepodařilo se načíst detail receptury.', { type: 'error' });
+        }
+      };
 
-              return ul;
-            },
-          },
-        ],
+      tr.addEventListener('click', (e) => {
+        if (isInteractive(e.target)) return;
+        openDetail();
+      });
+
+      tr.addEventListener('keydown', (e) => {
+        if (isInteractive(e.target)) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openDetail();
+        }
       });
     });
 
@@ -491,7 +510,7 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
         const haystack = [
           r.name,
           r.shade,
-          r.base,
+          r.gloss,
           r.note,
         ]
           .filter(Boolean)
@@ -851,26 +870,18 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
     form.innerHTML = `
       <label>Název receptury<input name="name" required placeholder="Fasádní barva" /></label>
       <label>Odstín / kód<input name="shade" placeholder="RAL 9010" /></label>
-      <label>Základ
-        <select name="base">
-          <option value="">(nezadán)</option>
-          <option value="interior">Interiér</option>
-          <option value="exterior">Exteriér</option>
-        </select>
-      </label>
-      <label>Suchý zbytek (%)<input name="solids" type="number" min="0" max="100" step="0.1" placeholder="48" /></label>
-      <label>VOC (g/l)<input name="voc" type="number" min="0" step="0.1" placeholder="30" /></label>
+      <label>Lesk<input name="gloss" placeholder="Mat / Polomat / Lesk" /></label>
+      <label>Dávka (kg)<input name="batchSize" type="number" min="0" step="0.01" placeholder="100" /></label>
+      <label class="production-field-full">Poznámka<textarea name="note" rows="2" placeholder="Specifikace, požadavky zákazníka, ..."></textarea></label>
     `;
 
     if (isEdit && existing) {
       form.elements.namedItem('name').value = existing.name || '';
       form.elements.namedItem('shade').value = existing.shade || '';
-      form.elements.namedItem('base').value = existing.base || '';
-      if (existing.solids != null && !Number.isNaN(existing.solids)) {
-        form.elements.namedItem('solids').value = existing.solids;
-      }
-      if (existing.voc != null && !Number.isNaN(existing.voc)) {
-        form.elements.namedItem('voc').value = existing.voc;
+      form.elements.namedItem('gloss').value = existing.gloss || '';
+      form.elements.namedItem('note').value = existing.note || '';
+      if (existing.batchSize != null && !Number.isNaN(existing.batchSize)) {
+        form.elements.namedItem('batchSize').value = existing.batchSize;
       }
     }
 
@@ -898,6 +909,10 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
     compHeader.style.justifyContent = 'space-between';
     const compLabel = document.createElement('label');
     compLabel.textContent = 'Složení receptury';
+
+    const unitHint = document.createElement('div');
+    unitHint.className = 'production-unit-hint';
+    unitHint.textContent = 'Množství složek zadávejte v kilogramech (kg).';
     const addComponentBtn = document.createElement('button');
     addComponentBtn.type = 'button';
     addComponentBtn.textContent = 'Přidat surovinu';
@@ -906,6 +921,8 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
     compHeader.appendChild(compLabel);
     compHeader.appendChild(addComponentBtn);
     compositionWrap.appendChild(compHeader);
+    compositionWrap.appendChild(unitHint);
+    compositionWrap.appendChild(unitHint);
 
     const list = document.createElement('div');
     list.className = 'form-grid composition-list';
@@ -933,7 +950,8 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
       amount.type = 'number';
       amount.min = '0';
       amount.step = '0.01';
-      amount.placeholder = 'Množství';
+      amount.placeholder = 'kg';
+      amount.title = 'Množství v kg';
       if (prefill.amount != null) amount.value = prefill.amount;
 
       const remove = document.createElement('button');
@@ -1031,14 +1049,11 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
         id: isEdit && existing ? existing.id : null,
         name: fd.get('name'),
         shade: fd.get('shade') || null,
-        base: fd.get('base') || null,
-        solids:
-          fd.get('solids') !== null && fd.get('solids') !== ''
-            ? parseFloat(fd.get('solids'))
-            : null,
-        voc:
-          fd.get('voc') !== null && fd.get('voc') !== ''
-            ? parseFloat(fd.get('voc'))
+        gloss: fd.get('gloss') || null,
+        note: fd.get('note') || null,
+        batchSize:
+          fd.get('batchSize') !== null && fd.get('batchSize') !== ''
+            ? parseFloat(fd.get('batchSize'))
             : null,
         composition,
       };
@@ -1066,9 +1081,9 @@ export async function renderRecipes(container, { labels, onCountChange } = {}) {
                 : Date.now(), // fallback
             name: payload.name,
             shade: payload.shade || '',
-            base: payload.base || '',
-            solids: payload.solids,
-            voc: payload.voc,
+            gloss: payload.gloss || '',
+            batchSize: payload.batchSize,
+            note: payload.note || '',
             composition,
             componentsCount: composition.length,
             createdAt: existing && existing.createdAt

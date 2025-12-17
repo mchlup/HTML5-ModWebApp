@@ -27,6 +27,11 @@ export default {
   dueDate: 'Termín výroby',
   quantity: 'Množství',
   status: 'Stav',
+  code: 'Kód',
+  contact: 'Kontakt',
+  note: 'Poznámka',
+  contact: 'Kontakt',
+  materialsCalcTitle: 'Přepočet surovin',
 
   // Detailnější texty pro podstránky production
   intermediatesIntro: 'Vytvořte polotovary z již evidovaných surovin.',

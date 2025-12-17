@@ -392,6 +392,82 @@ function isInteractiveElement(target, rootEl) {
   return true;
 }
 
+// ===== Receptury / přepočty (sdílené helpery) =====
+
+export function normalizeRecipeComposition(recipe) {
+  if (!recipe || typeof recipe !== 'object') return [];
+  const raw =
+    (Array.isArray(recipe.composition) && recipe.composition) ||
+    (Array.isArray(recipe.components) && recipe.components) ||
+    (Array.isArray(recipe.items) && recipe.items) ||
+    [];
+  return raw
+    .map((c) => {
+      if (!c || typeof c !== 'object') return null;
+      const componentType =
+        c.componentType || c.component_type || c.type || c.kind || null;
+      const componentIdRaw =
+        c.componentId != null ? c.componentId : c.component_id != null ? c.component_id : c.id;
+      const componentId = componentIdRaw != null ? Number(componentIdRaw) : null;
+      const amountRaw = c.amount != null ? c.amount : c.qty != null ? c.qty : c.quantity;
+      const amount = amountRaw != null && amountRaw !== '' ? Number(amountRaw) : 0;
+      if (!componentType || !componentId) return null;
+      return {
+        componentType: String(componentType),
+        componentId,
+        amount: Number.isFinite(amount) ? amount : 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+export function sumCompositionWeightKg(composition) {
+  const comps = Array.isArray(composition) ? composition : [];
+  return comps.reduce((acc, c) => acc + (Number(c?.amount) || 0), 0);
+}
+
+export function scaleCompositionToTargetKg(composition, targetKg) {
+  const comps = Array.isArray(composition) ? composition : [];
+  const baseKg = sumCompositionWeightKg(comps);
+  const tgt = Number(targetKg);
+  const safeTarget = Number.isFinite(tgt) ? tgt : 0;
+
+  const factor = baseKg > 0 ? safeTarget / baseKg : 0;
+
+  return {
+    baseKg,
+    targetKg: safeTarget,
+    factor,
+    scaled: comps.map((c) => ({
+      ...c,
+      requiredAmount: (Number(c.amount) || 0) * factor,
+    })),
+  };
+}
+
+export function formatKg(value, { decimals = 3 } = {}) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  const fixed = n.toFixed(decimals);
+  // trim trailing zeros safely: 12.3400 -> 12.34, 12.000 -> 12
+  return fixed.replace(/\.0+$/, '').replace(/(\.[0-9]*?)0+$/, '$1');
+}
+
+export function resolveRecipeComponentLabel(component, { rawMaterials = [], intermediates = [] } = {}) {
+  const type = String(component?.componentType || '').toLowerCase();
+  const id = Number(component?.componentId);
+  if (!id) return '';
+  if (type === 'material' || type === 'raw' || type === 'rawmaterial' || type === 'raw_material') {
+    const m = rawMaterials.find((x) => Number(x.id) === id);
+    return m?.name || m?.title || `Surovina #${id}`;
+  }
+  if (type === 'intermediate' || type === 'semi' || type === 'semi_product') {
+    const i = intermediates.find((x) => Number(x.id) === id);
+    return i?.name || i?.title || `Polotovar #${id}`;
+  }
+  return `Komponenta #${id}`;
+}
+
 function formatDetailValue(value) {
   if (value === null || value === undefined || value === '') return '—';
   if (value instanceof Node) return value;

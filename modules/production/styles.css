@@ -1,3 +1,61 @@
+/* =========================================================
+   PRODUCTION – Zakázky / přepočet surovin v modálu
+   ========================================================= */
+
+.production-order-calc {
+  grid-column: 1 / -1;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.production-order-calc-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.production-order-calc-meta {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  margin-bottom: 0.5rem;
+}
+
+.production-order-calc-table {
+  overflow-x: auto;
+}
+
+.production-order-calc-table table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.production-order-calc-table th,
+.production-order-calc-table td {
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.production-order-calc-table th {
+  background: #f8fafc;
+  text-align: left;
+  font-weight: 600;
+}
+
+.production-order-calc-table td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+body.theme-dark .production-order-calc {
+  border-top-color: rgba(148, 163, 184, 0.25);
+}
+
+body.theme-dark .production-order-calc-table th {
+  background: rgba(15, 23, 42, 0.9);
+}
+
 /* Orders – zákazník + tlačítko v jednom řádku */
 .materials-supplier-inline {
   display: flex;
@@ -782,3 +840,27 @@ button.production-btn[disabled] {
 /* Production – sjednocený modál */
 .production-modal-close{font-size:1.6rem;line-height:1;padding:0.15rem 0.55rem;}
 .production-modal-body{max-height:70vh;overflow-y:auto;padding-top:0.25rem;}
+
+/* Modály – pomocné layout třídy */
+.production-field-full{grid-column:1/-1;}
+
+/* malé nápovědy k jednotkám (kg, g, …) v modálech */
+.production-unit-hint{
+  font-size:0.85rem;
+  opacity:0.85;
+  margin-top:0.15rem;
+}
+
+.production-detail-total{margin-top:0.4rem;font-weight:600;}
+
+/* Zakázky – přepočet surovin */
+.production-order-calc{grid-column:1/-1;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid rgba(148,163,184,0.35);} 
+.production-order-calc-title{font-weight:600;margin-bottom:0.25rem;}
+.production-order-calc-meta{font-size:0.85rem;opacity:0.85;margin-bottom:0.5rem;}
+.production-order-calc-table{overflow-x:auto;}
+.production-order-calc-table table{width:100%;min-width:520px;border-collapse:collapse;font-size:0.85rem;}
+.production-order-calc-table th,.production-order-calc-table td{padding:0.35rem 0.55rem;border-bottom:1px solid rgba(148,163,184,0.3);} 
+.production-order-calc-table th{background:#f8fafc;text-align:left;font-weight:600;}
+.production-order-calc-table td.num{text-align:right;white-space:nowrap;}
+body.theme-dark .production-order-calc{border-top-color:rgba(148,163,184,0.25);} 
+body.theme-dark .production-order-calc-table th{background:rgba(15,23,42,0.9);} 
